@@ -1,4 +1,5 @@
 from app.pipeline.ground import (
+    AMBIGUOUS_SHORT_QUOTE,
     DUPLICATE,
     QUOTE_NOT_FOUND,
     SUBJECT_UNRESOLVED,
@@ -102,3 +103,114 @@ def test_model_reported_unattributed_values_become_rejections():
     )
     assert len(rejections) == 1
     assert "legend" in rejections[0].detail
+
+
+PAGE_WITH_TABLE = (
+    "Operating metrics\n"
+    "Pin-code reach        18,540    18,675    18,793\n"
+    "Gateways                  94       110       111\n"
+    "Automated sort centers    24        30        29\n"
+    "Freight service centers  129       129       129\n"
+)
+
+
+class TestShortQuotes:
+    """A quote's job is to pin the value to one place, which is not the same as being long.
+
+    On a metrics slide the label sits in one column and the values in others, so no
+    contiguous run of page text contains both. Requiring one rejects correct facts.
+    """
+
+    def test_a_lone_number_is_accepted_when_it_appears_once(self):
+        outcome = ground_candidates(
+            [
+                candidate(
+                    statement="Pin-code reach was 18,793",
+                    predicate="pin-code reach",
+                    value_text="18,793",
+                    value_number=18793,
+                    unit="",
+                    evidence_quote="18,793",
+                )
+            ],
+            PAGE_WITH_TABLE,
+        )
+        assert len(outcome.grounded) == 1
+        assert outcome.grounded[0].quote == "18,793"
+
+    def test_a_lone_number_is_rejected_when_it_is_ambiguous(self):
+        """129 appears three times on this page, so it identifies nothing."""
+        outcome = ground_candidates(
+            [
+                candidate(
+                    statement="Freight service centers numbered 129",
+                    predicate="freight service centers",
+                    value_text="129",
+                    value_number=129,
+                    unit="",
+                    evidence_quote="129",
+                )
+            ],
+            PAGE_WITH_TABLE,
+        )
+        assert not outcome.grounded
+        assert outcome.rejected[0].reason == AMBIGUOUS_SHORT_QUOTE
+
+    def test_a_number_absent_from_the_page_is_still_rejected(self):
+        outcome = ground_candidates(
+            [
+                candidate(
+                    statement="Gateways numbered 999",
+                    predicate="gateways",
+                    value_text="999",
+                    value_number=999,
+                    unit="",
+                    evidence_quote="999",
+                )
+            ],
+            PAGE_WITH_TABLE,
+        )
+        assert outcome.rejected[0].reason == QUOTE_NOT_FOUND
+
+
+class TestCompositeQuotes:
+    """The layout rendition marks spatially separate items with a middle dot.
+
+    A model will sometimes quote a whole row as evidence for one cell. That string is real
+    on screen and absent from the page, so it falls back to the fragment carrying the value.
+    """
+
+    def test_the_fragment_containing_the_value_is_chosen(self):
+        page = "Total Service EBITDA\n(217)\n(125)\n(67)\n92\n306\n"
+        outcome = ground_candidates(
+            [
+                candidate(
+                    statement="Service EBITDA was (125)",
+                    predicate="service ebitda",
+                    value_text="(125)",
+                    value_number=-125,
+                    unit="",
+                    evidence_quote="(217)   ·   (125)   ·   (67)   ·   92   ·   306",
+                )
+            ],
+            page,
+        )
+        assert len(outcome.grounded) == 1
+        assert "(125)" in outcome.grounded[0].quote
+
+    def test_a_composite_quote_whose_value_is_absent_is_still_rejected(self):
+        page = "Total Service EBITDA\n(217)\n(67)\n92\n"
+        outcome = ground_candidates(
+            [
+                candidate(
+                    statement="Service EBITDA was (125)",
+                    predicate="service ebitda",
+                    value_text="(125)",
+                    value_number=-125,
+                    unit="",
+                    evidence_quote="(217)   ·   (125)   ·   (67)",
+                )
+            ],
+            page,
+        )
+        assert not outcome.grounded

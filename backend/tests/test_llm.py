@@ -3,7 +3,7 @@
 import pytest
 
 from app.llm.base import LlmError, LlmRequest, extract_json, salvage_truncated_json
-from app.llm.providers import _to_gemini_schema
+from app.llm.providers import to_gemini_schema
 from app.llm.schemas import FACT_EXTRACTION_SCHEMA
 
 
@@ -73,14 +73,14 @@ class TestGeminiSchema:
     """
 
     def test_types_are_upper_cased_and_structure_is_preserved(self):
-        translated = _to_gemini_schema(FACT_EXTRACTION_SCHEMA)
+        translated = to_gemini_schema(FACT_EXTRACTION_SCHEMA)
         assert translated["type"] == "OBJECT"
         assert set(translated["properties"]) == {"facts", "unattributed"}
         assert translated["properties"]["facts"]["type"] == "ARRAY"
         assert translated["properties"]["facts"]["items"]["type"] == "OBJECT"
 
     def test_unsupported_keywords_are_dropped(self):
-        translated = _to_gemini_schema(
+        translated = to_gemini_schema(
             {
                 "type": "object",
                 "additionalProperties": False,
@@ -93,7 +93,7 @@ class TestGeminiSchema:
         assert translated["properties"]["a"]["type"] == "STRING"
 
     def test_enums_and_descriptions_survive(self):
-        translated = _to_gemini_schema(
+        translated = to_gemini_schema(
             {"type": "string", "enum": ["a", "b"], "description": "keep me"}
         )
         assert translated["enum"] == ["a", "b"]

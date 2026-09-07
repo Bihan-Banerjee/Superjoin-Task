@@ -88,7 +88,7 @@ class GeminiProvider(Provider):
                 "temperature": request.temperature,
                 "maxOutputTokens": request.max_output_tokens,
                 "responseMimeType": "application/json",
-                "responseSchema": _to_gemini_schema(request.schema),
+                "responseSchema": to_gemini_schema(request.schema),
                 # The 2.5 models reason before answering, and that reasoning is drawn from
                 # the same output budget as the response. Left on its default the model
                 # spends the budget thinking and the JSON is cut off mid-object, which
@@ -331,7 +331,7 @@ def build_provider(name: str, settings: Settings) -> Provider:
     return builder(settings)
 
 
-def _to_gemini_schema(schema: dict[str, Any]) -> dict[str, Any]:
+def to_gemini_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Translate a JSON Schema into the subset Gemini accepts.
 
     Gemini rejects `additionalProperties`, `$schema` and a few other standard keywords, and
@@ -359,9 +359,9 @@ def _to_gemini_schema(schema: dict[str, Any]) -> dict[str, Any]:
         if key == "type" and isinstance(value, str):
             result["type"] = value.upper()
         elif key == "items":
-            result["items"] = _to_gemini_schema(value)
+            result["items"] = to_gemini_schema(value)
         elif key == "properties" and isinstance(value, dict):
-            result["properties"] = {name: _to_gemini_schema(child) for name, child in value.items()}
+            result["properties"] = {name: to_gemini_schema(child) for name, child in value.items()}
         else:
             result[key] = value
 
