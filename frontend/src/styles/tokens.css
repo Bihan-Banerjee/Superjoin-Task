@@ -1,0 +1,151 @@
+/*
+  Design tokens.
+
+  The interface is a review workbench: dense tables, verbatim quotes, side-by-side
+  comparisons. It is optimised for reading a lot of text and numbers accurately, not for
+  looking impressive in a screenshot. Hence borders rather than shadows, one accent used
+  sparingly, and type small enough that a full evidence quote fits without scrolling.
+*/
+
+:root {
+  color-scheme: light;
+
+  --surface: #ffffff;
+  --surface-raised: #fbfbfa;
+  --surface-sunken: #f5f5f4;
+  --surface-inset: #f0efed;
+
+  --border: #e2e0dc;
+  --border-strong: #c9c6c0;
+  --border-focus: #3c5a7a;
+
+  --text: #1c1b19;
+  --text-muted: #6b6862;
+  --text-faint: #94908a;
+  --text-inverse: #fbfbfa;
+
+  --accent: #2f5573;
+  --accent-hover: #24435c;
+  --accent-soft: #e8eef4;
+  --accent-border: #b9cadb;
+
+  /* Relation semantics. Deliberately desaturated: these appear as small labels next to
+     dense text, and saturated chips make a table unreadable. */
+  --corroborate: #2f6b46;
+  --corroborate-soft: #e6f0e9;
+  --corroborate-border: #b4d0bf;
+
+  --contradict: #9a3535;
+  --contradict-soft: #f7e9e9;
+  --contradict-border: #dfbcbc;
+
+  --reconcile: #855314;
+  --reconcile-soft: #f8f0e2;
+  --reconcile-border: #dfcaa4;
+
+  --neutral-chip: #eeece9;
+  --neutral-chip-border: #d8d5d0;
+
+  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius: 3px;
+  --radius-lg: 5px;
+
+  --sidebar-width: 208px;
+  --header-height: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --surface: #16181a;
+    --surface-raised: #1c1f21;
+    --surface-sunken: #101214;
+    --surface-inset: #232629;
+
+    --border: #2c3033;
+    --border-strong: #3d4247;
+    --border-focus: #6f9dc4;
+
+    --text: #e6e4e1;
+    --text-muted: #9a9691;
+    --text-faint: #6f6c68;
+    --text-inverse: #16181a;
+
+    --accent: #7ba7cd;
+    --accent-hover: #97bcdb;
+    --accent-soft: #1b2733;
+    --accent-border: #35506a;
+
+    --corroborate: #7fb894;
+    --corroborate-soft: #16241b;
+    --corroborate-border: #2c4535;
+
+    --contradict: #d38a8a;
+    --contradict-soft: #2a1a1a;
+    --contradict-border: #4d3030;
+
+    --reconcile: #d4ab6a;
+    --reconcile-soft: #2a2113;
+    --reconcile-border: #4c3d22;
+
+    --neutral-chip: #24272a;
+    --neutral-chip-border: #34383c;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface: #16181a;
+  --surface-raised: #1c1f21;
+  --surface-sunken: #101214;
+  --surface-inset: #232629;
+
+  --border: #2c3033;
+  --border-strong: #3d4247;
+  --border-focus: #6f9dc4;
+
+  --text: #e6e4e1;
+  --text-muted: #9a9691;
+  --text-faint: #6f6c68;
+  --text-inverse: #16181a;
+
+  --accent: #7ba7cd;
+  --accent-hover: #97bcdb;
+  --accent-soft: #1b2733;
+  --accent-border: #35506a;
+
+  --corroborate: #7fb894;
+  --corroborate-soft: #16241b;
+  --corroborate-border: #2c4535;
+
+  --contradict: #d38a8a;
+  --contradict-soft: #2a1a1a;
+  --contradict-border: #4d3030;
+
+  --reconcile: #d4ab6a;
+  --reconcile-soft: #2a2113;
+  --reconcile-border: #4c3d22;
+
+  --neutral-chip: #24272a;
+  --neutral-chip-border: #34383c;
+}
