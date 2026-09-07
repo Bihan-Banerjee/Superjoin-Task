@@ -226,7 +226,7 @@ def reconcile(left: Fact, right: Fact) -> Verdict:
     # and the numbers disagree. That is as close to a real contradiction as rules can get,
     # but the evidence may still carry a distinction the extractor did not capture, so a
     # large gap is put to the model rather than asserted.
-    severity = _severity(left, right, difference)
+    severity = severity_for(left, right, difference)
     if difference >= 0.5 or left.confidence < 0.7 or right.confidence < 0.7:
         return _escalate(
             f"same measure, entity and period, but the values differ by {difference:.1%}",
@@ -400,7 +400,7 @@ def _agreement_text(left: Fact, right: Fact, difference: float, scale_differs: b
     )
 
 
-def _severity(left: Fact, right: Fact, difference: float) -> float:
+def severity_for(left: Fact, right: Fact, difference: float) -> float:
     """How much a contradiction should be trusted and how much it matters.
 
     Weighted by the size of the gap and by how well grounded each side is, so a large

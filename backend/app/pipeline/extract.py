@@ -91,8 +91,17 @@ async def profile_document(
         schema=DOCUMENT_PROFILE_SCHEMA,
         max_output_tokens=2048,
     )
-    response = await client.complete(request)
-    profile = response.data if isinstance(response.data, dict) else {}
+
+    profile: dict[str, Any] = {}
+    try:
+        response = await client.complete(request)
+        if isinstance(response.data, dict):
+            profile = response.data
+    except LlmError as error:
+        # A failed profile costs context, not the document. Scale and currency declarations
+        # are read from the page text below either way, and periods fall back to the
+        # calendar convention, so continuing produces a degraded result rather than none.
+        logger.warning("could not profile %s, continuing without it: %s", parsed.path.name, error)
 
     # A scale declared in the page text is observed rather than inferred, so it wins over
     # the model's reading of the front matter.

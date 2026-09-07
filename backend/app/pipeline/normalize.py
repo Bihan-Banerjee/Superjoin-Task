@@ -26,6 +26,8 @@ from typing import Any
 from app.core import periods as period_lib
 from app.core.text import collapse_whitespace
 from app.core.units import (
+    COUNT_NOUNS,
+    CURRENCY,
     Unit,
     is_bare_scale,
     normalize_currency,
@@ -173,17 +175,26 @@ def normalize_candidate(
     page: PageContext,
 ) -> NormalizedFact:
     subject = collapse_whitespace(str(candidate.get("subject", "")))
-    predicate = collapse_whitespace(str(candidate.get("predicate", ""))).lower()
     statement = collapse_whitespace(str(candidate.get("statement", "")))
+    predicate, period_from_predicate = _split_period_from_predicate(
+        collapse_whitespace(str(candidate.get("predicate", ""))).lower()
+    )
 
+    kind = str(candidate.get("kind") or "quantitative")
     value_text = collapse_whitespace(str(candidate.get("value_text", ""))) or None
-    value_number = _read_number(candidate, value_text)
+    value_number = _read_number(candidate, value_text, kind)
 
     unit_surface = _clean_unit(candidate.get("unit"))
-    unit = _resolve(candidate, unit_surface, value_text, document, page)
+    unit = (
+        _resolve(candidate, unit_surface, value_text, document, page)
+        if value_number is not None
+        else None
+    )
     value_base = value_number * unit.factor if (value_number is not None and unit) else None
 
-    period_label = collapse_whitespace(str(candidate.get("period", ""))) or None
+    period_label = (
+        collapse_whitespace(str(candidate.get("period", ""))) or period_from_predicate or None
+    )
     resolved_period = period_lib.parse_period(period_label, document.fiscal_convention)
 
     issues: list[str] = []
@@ -212,7 +223,14 @@ def normalize_candidate(
     )
 
 
-def _read_number(candidate: dict[str, Any], value_text: str | None) -> float | None:
+def _read_number(candidate: dict[str, Any], value_text: str | None, kind: str) -> float | None:
+    """The numeric value, if this fact has one.
+
+    A categorical value is never scanned for digits. "Plot 5, Sector 44, Gurugram" contains
+    numbers, and reading them turns an address into a quantity of 5 somethings — a fact that
+    then gets compared arithmetically against other quantities. The extractor already says
+    which kind of fact this is; trusting that is cheaper and more correct than guessing.
+    """
     raw = candidate.get("value_number")
     if isinstance(raw, int | float) and not isinstance(raw, bool):
         return float(raw)
@@ -220,7 +238,12 @@ def _read_number(candidate: dict[str, Any], value_text: str | None) -> float | N
         parsed = parse_number(raw)
         if parsed is not None:
             return parsed
+    if kind in _NON_NUMERIC_KINDS:
+        return None
     return parse_number(value_text) if value_text else None
+
+
+_NON_NUMERIC_KINDS = {"categorical", "relational", "definitional"}
 
 
 def _clean_unit(raw: Any) -> str | None:
@@ -262,19 +285,92 @@ def _resolve(
         )
 
     # A declaration like "all amounts in Indian Rupees in million" is a statement about
-    # amounts. It applies to a figure that gives no unit, or only a scale — not to a
-    # percentage, a duration or a shipment count, which already say what they measure.
-    # Inheriting indiscriminately would multiply "13%" by a million.
-    if unit is not None and not is_bare_scale(unit):
+    # *amounts*, so currency and scale are inherited under different conditions.
+    #
+    # The currency applies only where nothing else established one, so it is never pushed
+    # onto a percentage or a shipment count.
+    #
+    # The scale applies to any monetary figure that did not carry its own — including one
+    # whose currency the extractor did report, which is the common case for a figure printed
+    # bare under a "(₹ in million)" heading. Gating scale on the currency being unknown too
+    # leaves those figures a million times too small.
+    # "Express Parcel shipments" given as "740 million" is 740 million shipments, not 740
+    # million rupees. The measure name says what is being counted, so when it names a
+    # countable thing and the figure carries only a scale, that noun becomes the unit and
+    # the document's currency is not applied.
+    unresolved = unit is None or is_bare_scale(unit)
+    if unresolved:
+        counted = _counted_noun(candidate)
+        if counted:
+            scale = unit.factor if unit else (inline_scale or 1.0)
+            return resolve_unit(counted, scale=scale) or unit
+
+    wants_currency = unresolved
+    wants_scale = inline_scale is None and (unresolved or unit.unit_class == CURRENCY)
+    if not wants_currency and not wants_scale:
         return unit
 
     inherited_currency = page.unit_currency or document.default_currency
     inherited_scale = page.unit_scale or document.default_scale
-    if not inherited_currency and not inherited_scale:
+
+    currency = stated_currency or (inherited_currency if wants_currency else None)
+    scale = inline_scale or (inherited_scale if wants_scale else None)
+    if scale_in_unit is not None:
+        scale = None  # already absorbed from the unit label
+    if not currency and not scale:
         return unit
 
-    effective = None if scale_in_unit is not None else (inline_scale or inherited_scale)
-    return resolve_unit(unit_surface, scale=effective, currency=inherited_currency) or unit
+    return resolve_unit(unit_surface, scale=scale, currency=currency) or unit
+
+
+# A period written into the front of a measure name, e.g. "FY24 EBITDA margin".
+_PERIOD_PREFIX = re.compile(
+    r"^\s*(?:"
+    r"q[1-4]\s*(?:fy)?\s*\d{2,4}(?:\s*-\s*\d{2,4})?"
+    r"|h[12]\s*(?:fy)?\s*\d{2,4}"
+    r"|fy\s*\d{2,4}(?:\s*-\s*\d{2,4})?"
+    r"|cy\s*\d{4}"
+    r"|\d{4}\s*-\s*\d{2,4}"
+    r")\s+",
+    re.IGNORECASE,
+)
+
+
+def _split_period_from_predicate(predicate: str) -> tuple[str, str | None]:
+    """Separate a period the extractor wrote into the measure name.
+
+    "FY24 EBITDA margin" and "FY23 EBITDA margin" are one measure at two periods, and
+    leaving the year in the name splits the registry so the two can never be compared. The
+    instruction not to do this is in the prompt and is followed most of the time; this makes
+    the outcome deterministic rather than dependent on that.
+
+    The period is not discarded — it is returned so it can fill an empty period field.
+    """
+    match = _PERIOD_PREFIX.match(predicate)
+    if not match:
+        return predicate, None
+    remainder = predicate[match.end() :].strip()
+    if len(remainder) < 3:
+        # The period was the whole name; keep it rather than reduce the measure to nothing.
+        return predicate, None
+    return remainder, match.group(0).strip()
+
+
+def _counted_noun(candidate: dict[str, Any]) -> str | None:
+    """The countable thing a measure names, if it names one.
+
+    Read from the measure rather than the value, because that is where it is stated:
+    "express parcel shipments" is a count of shipments however the figure beside it is
+    written. Only the trailing words are considered — the head of the phrase is the noun.
+    """
+    predicate = collapse_whitespace(str(candidate.get("predicate", ""))).lower()
+    if not predicate:
+        return None
+    words = re.findall(r"[a-z]+", predicate)
+    for word in reversed(words[-2:]):
+        if word in COUNT_NOUNS:
+            return word
+    return None
 
 
 _SCALE_WORD = re.compile(

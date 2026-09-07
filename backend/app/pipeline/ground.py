@@ -23,11 +23,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core.text import locate, normalize
+from app.core.text import NO_MATCH, SpanMatch, locate, normalize
 from app.core.units import parse_number
 
 QUOTE_NOT_FOUND = "quote_not_found"
 QUOTE_TOO_SHORT = "quote_too_short"
+AMBIGUOUS_SHORT_QUOTE = "ambiguous_short_quote"
 VALUE_ABSENT_FROM_QUOTE = "value_absent_from_quote"
 MISSING_FIELDS = "missing_required_fields"
 SUBJECT_UNRESOLVED = "subject_unresolved"
@@ -38,9 +39,18 @@ PERIOD_UNRESOLVED = "period_unresolved"
 UNIT_UNRESOLVED = "unit_unresolved"
 UNATTRIBUTED_BY_MODEL = "unattributed_by_model"
 
-MINIMUM_QUOTE_CHARACTERS = 12
+# A quote has to pin the value to one place on the page. Length was the first proxy for
+# that and it was the wrong one: on a metrics slide the evidence genuinely is a lone number
+# in a table cell, because the label sits in a different column and no contiguous run of
+# text contains both. What actually matters is whether the quote is *unambiguous*, so a
+# short quote is accepted when it occurs exactly once on the page and rejected when it does
+# not. See `_check_shape` and `AMBIGUOUS_SHORT_QUOTE`.
+MINIMUM_QUOTE_CHARACTERS = 2
+SHORT_QUOTE_TOKENS = 2
 MINIMUM_CONFIDENCE = 0.25
 MINIMUM_MATCH_SCORE = 82.0
+# Characters either side of the matched span that still count as supporting the value.
+VALUE_MATCH_MARGIN = 24
 
 
 @dataclass
@@ -91,7 +101,38 @@ def ground_candidates(
             continue
 
         quote = str(candidate.get("evidence_quote", "")).strip()
+
+        # A short quote only grounds a fact if it points at one place. "18,540" beside a
+        # "Pin-code reach" label in another column is perfectly good evidence when that
+        # string appears once on the page, and no evidence at all when it appears five times.
+        if len(quote.split()) < SHORT_QUOTE_TOKENS:
+            occurrences = _count_occurrences(page_text, quote)
+            if occurrences == 0:
+                outcome.rejected.append(
+                    Rejection(
+                        reason=QUOTE_NOT_FOUND,
+                        detail=f"the value {quote!r} does not appear on this page",
+                        candidate=candidate,
+                    )
+                )
+                continue
+            if occurrences > 1:
+                outcome.rejected.append(
+                    Rejection(
+                        reason=AMBIGUOUS_SHORT_QUOTE,
+                        detail=(
+                            f"the evidence is only {quote!r}, which appears {occurrences} "
+                            "times on this page, so it does not identify which one the fact "
+                            "refers to"
+                        ),
+                        candidate=candidate,
+                    )
+                )
+                continue
+
         match = locate(page_text, quote, minimum_score=MINIMUM_MATCH_SCORE)
+        if not match.found:
+            match = _locate_fragment(page_text, quote, str(candidate.get("value_text", "")))
         if not match.found:
             outcome.rejected.append(
                 Rejection(
@@ -106,13 +147,13 @@ def ground_candidates(
             continue
 
         located = page_text[match.start : match.end]
-        if not _value_supported(candidate, located, quote):
+        if not _value_supported(candidate, page_text, match.start, match.end):
             outcome.rejected.append(
                 Rejection(
                     reason=VALUE_ABSENT_FROM_QUOTE,
                     detail=(
-                        f"the value {candidate.get('value_text', '')!r} is not present in "
-                        "the evidence that was quoted for it"
+                        f"the value {candidate.get('value_text', '')!r} does not appear in "
+                        f"the source text the evidence was matched to: {located.strip()!r}"
                     ),
                     candidate=candidate,
                 )
@@ -145,6 +186,50 @@ def ground_candidates(
     return outcome
 
 
+def _count_occurrences(page_text: str, quote: str) -> int:
+    haystack = normalize(page_text).text
+    needle = normalize(quote).text
+    if not needle:
+        return 0
+    return haystack.count(needle)
+
+
+# The layout renditions join spatially separate items with these markers so a model can see
+# they are distinct. A model sometimes quotes across one, producing a "quote" that is real
+# on screen and absent from the page.
+_RENDITION_SEPARATORS = re.compile(r"\s*(?:\||·|/(?=\s)|\n)\s*")
+
+
+def _locate_fragment(page_text: str, quote: str, value_text: str) -> SpanMatch:
+    """Recover a quote the model assembled across the rendition's display separators.
+
+    The page is shown to the model with spatially separate items marked off, and it will
+    occasionally quote a whole row of them as evidence for one value. That string exists on
+    the page in several places rather than one, so it cannot be located as written.
+
+    Fragments that contain the value are tried first. Picking the longest instead would
+    often land on a neighbouring cell, and the fact would then be rejected for a value that
+    is genuinely on the page — the right fragment simply was not the one chosen.
+    """
+    fragments = [part.strip() for part in _RENDITION_SEPARATORS.split(quote) if part.strip()]
+    if len(fragments) < 2:
+        return NO_MATCH
+
+    normalized_value = normalize(value_text).text if value_text else ""
+
+    def carries_value(fragment: str) -> bool:
+        return bool(normalized_value) and normalized_value in normalize(fragment).text
+
+    ordered = sorted(fragments, key=lambda part: (not carries_value(part), -len(part)))
+    for fragment in ordered:
+        if len(fragment) < 2:
+            continue
+        match = locate(page_text, fragment, minimum_score=MINIMUM_MATCH_SCORE)
+        if match.found:
+            return match
+    return NO_MATCH
+
+
 def _check_shape(candidate: dict[str, Any], minimum_confidence: float) -> Rejection | None:
     required = ("statement", "subject", "predicate", "value_text", "evidence_quote")
     missing = [
@@ -161,10 +246,7 @@ def _check_shape(candidate: dict[str, Any], minimum_confidence: float) -> Reject
     if len(quote) < MINIMUM_QUOTE_CHARACTERS:
         return Rejection(
             reason=QUOTE_TOO_SHORT,
-            detail=(
-                f"the quoted evidence is {len(quote)} characters, too little to identify "
-                "what the value measures"
-            ),
+            detail=f"the quoted evidence is {quote!r}, too little to locate anything",
             candidate=candidate,
         )
 
@@ -209,20 +291,29 @@ _VAGUE_SUBJECTS = {
 }
 
 
-def _value_supported(candidate: dict[str, Any], located: str, original_quote: str) -> bool:
-    """Check the value is inside the evidence, not merely adjacent to it.
+def _value_supported(
+    candidate: dict[str, Any], page_text: str, start: int, end: int
+) -> bool:
+    """Check the value appears in the *source page*, inside the span the quote matched.
 
-    A model that returns a plausible sentence and an unrelated number is the failure mode
-    that matters most, because the result looks correct in a table. Comparing on parsed
-    numbers rather than on strings means "8,142" still matches "8142" and " 8 142 ", while
-    a genuinely different figure is caught.
+    Checked against the page and never against the model's own quote. A quote is a claim
+    about the document, so validating a value against the text the model supplied would let
+    it corroborate itself: write any number into the quote and the check passes. That is
+    precisely the failure this guard exists to catch, because a plausible sentence carrying
+    an invented figure looks completely correct in a table.
+
+    Comparing on parsed numbers rather than strings means "8,142" still matches "8142" and
+    "8 142", while a genuinely different figure is caught.
     """
     value_text = str(candidate.get("value_text", "")).strip()
     if not value_text:
         return False
 
-    haystack = normalize(f"{located} {original_quote}").text
-    if normalize(value_text).text in haystack:
+    # A small margin either side: fuzzy matching can trim a boundary token, and the value
+    # is sometimes the first or last thing in the quote.
+    window = page_text[max(0, start - VALUE_MATCH_MARGIN) : end + VALUE_MATCH_MARGIN]
+
+    if normalize(value_text).text in normalize(window).text:
         return True
 
     expected = candidate.get("value_number")
@@ -233,7 +324,7 @@ def _value_supported(candidate: dict[str, Any], located: str, original_quote: st
         # Non-numeric values must appear literally; there is nothing else to compare.
         return False
 
-    for raw in _NUMBER_IN_TEXT.findall(f"{located} {original_quote}"):
+    for raw in _NUMBER_IN_TEXT.findall(window):
         found = parse_number(raw)
         if found is None:
             continue

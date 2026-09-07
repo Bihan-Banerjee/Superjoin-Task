@@ -67,14 +67,39 @@ def generate(session: Session, new_fact_ids: list[int]) -> list[Pair]:
     new_facts = list(session.scalars(select(Fact).where(Fact.id.in_(new_fact_ids))))
     pairs: dict[tuple[int, int], Pair] = {}
 
-    for pair in _by_measure(session, new_facts):
-        pairs.setdefault(pair.key(), pair)
-    for pair in _by_vector(session, new_facts):
-        pairs.setdefault(pair.key(), pair)
-    for pair in _by_lexical(session, new_facts):
-        pairs.setdefault(pair.key(), pair)
+    for source in (_by_measure, _by_vector, _by_lexical):
+        for pair in source(session, new_facts):
+            pairs.setdefault(pair.key(), pair)
 
-    return _cap_per_fact(list(pairs.values()))
+    # Applied once here rather than inside each route. The three sources propose pairs by
+    # different means and it is easy for one of them to forget a rule the others apply,
+    # which is exactly what happened: the lexical route does not load the facts it proposes,
+    # so it cannot see that two of them share a page.
+    return _cap_per_fact(_drop_same_page(session, list(pairs.values())))
+
+
+def _drop_same_page(session: Session, pairs: list[Pair]) -> list[Pair]:
+    """Discard pairs whose facts sit on the same page of the same document.
+
+    Two figures printed side by side are usually one statement read twice — a table row
+    against its own total, or adjacent bars in a chart. Relating them says nothing and
+    consumes the comparison budget that cross-document pairs need.
+    """
+    if not pairs:
+        return []
+    involved = {pair.left_id for pair in pairs} | {pair.right_id for pair in pairs}
+    location = {
+        row[0]: (row[1], row[2])
+        for row in session.execute(
+            select(Fact.id, Fact.document_id, Fact.page_id).where(Fact.id.in_(involved))
+        )
+    }
+    return [
+        pair
+        for pair in pairs
+        if location.get(pair.left_id) != location.get(pair.right_id)
+        or pair.left_id not in location
+    ]
 
 
 def _by_measure(session: Session, new_facts: list[Fact]) -> list[Pair]:
@@ -98,8 +123,6 @@ def _by_measure(session: Session, new_facts: list[Fact]) -> list[Pair]:
             # Both sides new: compare each unordered pair once.
             if other.id in new_ids and other.id < fact.id:
                 continue
-            if _same_place(fact, other):
-                continue
             pairs.append(Pair(fact.id, other.id, similarity=1.0, source="measure"))
     return pairs
 
@@ -113,8 +136,6 @@ def _by_vector(session: Session, new_facts: list[Fact]) -> list[Pair]:
     ids = [row[0] for row in stored]
     matrix = embed.stack([row[1] for row in stored], dims)
     position = {fact_id: index for index, fact_id in enumerate(ids)}
-
-    facts_by_id = {fact.id: fact for fact in session.scalars(select(Fact).where(Fact.id.in_(ids)))}
 
     new_ids = {fact.id for fact in new_facts}
     pairs: list[Pair] = []
@@ -130,9 +151,6 @@ def _by_vector(session: Session, new_facts: list[Fact]) -> list[Pair]:
             if other_id == fact.id:
                 continue
             if other_id in new_ids and other_id < fact.id:
-                continue
-            other = facts_by_id.get(other_id)
-            if other is None or _same_place(fact, other):
                 continue
             pairs.append(Pair(fact.id, other_id, similarity=float(score), source="vector"))
     return pairs
@@ -200,15 +218,6 @@ _STOPWORDS = {
 }
 
 
-def _same_place(left: Fact, right: Fact) -> bool:
-    """Facts from the same page are usually one statement read twice.
-
-    Comparing them produces relationships that say nothing — a table row against its own
-    total — while burning the comparison budget the cross-document pairs need.
-    """
-    return left.document_id == right.document_id and left.page_id == right.page_id
-
-
 def _cap_per_fact(pairs: list[Pair]) -> list[Pair]:
     """Bound the fan-out of any single fact.
 
@@ -234,15 +243,27 @@ def _cap_per_fact(pairs: list[Pair]) -> list[Pair]:
 
 
 def store_embeddings(session: Session, facts: list[Fact]) -> None:
+    """Embed each fact's claim key, computing each distinct key only once.
+
+    Facts repeat their claim key more often than it looks: the same measure restated in a
+    table and in the prose describing it, or the same figure on a summary page and again in
+    the statement it summarises. Embedding is the slowest stage of an ingest, so paying for
+    each distinct key rather than each fact is worth the dictionary.
+    """
     if not facts:
         return
-    vectors = embed.embed_texts([fact.claim_key or fact.statement for fact in facts])
+
+    keys = [fact.claim_key or fact.statement for fact in facts]
+    distinct = list(dict.fromkeys(keys))
+    vectors = embed.embed_texts(distinct)
     dims = int(vectors.shape[1]) if vectors.size else embed.dimensions()
-    for fact, vector in zip(facts, vectors, strict=False):
+    by_key = {key: vector for key, vector in zip(distinct, vectors, strict=False)}
+
+    for fact, key in zip(facts, keys, strict=False):
         session.merge(
             FactEmbedding(
                 fact_id=fact.id,
                 dimensions=dims,
-                vector=embed.to_blob(np.asarray(vector, dtype=np.float32)),
+                vector=embed.to_blob(np.asarray(by_key[key], dtype=np.float32)),
             )
         )

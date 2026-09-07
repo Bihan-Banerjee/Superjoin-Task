@@ -37,7 +37,7 @@ from app.llm.base import PURPOSE_ADJUDICATE, LlmError, LlmRequest
 from app.llm.client import LlmClient
 from app.llm.prompts import ADJUDICATE_SYSTEM, adjudicate_prompt
 from app.llm.schemas import ADJUDICATION_SCHEMA, DIMENSIONS, VERDICTS
-from app.pipeline.reconcile import Verdict
+from app.pipeline.reconcile import Verdict, severity_for
 
 logger = logging.getLogger(__name__)
 
@@ -61,16 +61,21 @@ class AdjudicationRequest:
 
 
 async def adjudicate_all(
-    session: Session,
     client: LlmClient,
     requests: list[AdjudicationRequest],
+    context: dict[int, dict[str, Any]],
     *,
     on_progress=None,
 ) -> dict[tuple[int, int], Verdict]:
+    """Adjudicate every escalated pair.
+
+    Context is passed in rather than loaded here so the caller can release its database
+    session before this runs: these are the slowest calls in the pipeline, and holding a
+    transaction open across them blocks every other writer.
+    """
     if not requests:
         return {}
 
-    context = _load_context(session, requests)
     results: dict[tuple[int, int], Verdict] = {}
     completed = 0
     lock = asyncio.Lock()
@@ -89,7 +94,7 @@ async def adjudicate_all(
     return results
 
 
-def _load_context(
+def load_adjudication_context(
     session: Session, requests: list[AdjudicationRequest]
 ) -> dict[int, dict[str, Any]]:
     """Page text and document identity for every fact involved, fetched in two queries."""
@@ -209,9 +214,7 @@ def _to_verdict(data: Any, item: AdjudicationRequest) -> Verdict | None:
     relation_type = _VERDICT_MAP[raw_verdict]
     severity = 0.0
     if relation_type == REL_CONTRADICTS:
-        from app.pipeline.reconcile import _severity
-
-        severity = _severity(item.left, item.right, item.delta_relative or 0.0) * confidence
+        severity = severity_for(item.left, item.right, item.delta_relative or 0.0) * confidence
 
     return Verdict(
         relation_type=relation_type,
