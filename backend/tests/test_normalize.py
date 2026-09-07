@@ -150,3 +150,65 @@ def test_an_unknown_fiscal_convention_falls_back_to_calendar():
     assert document_context_from_profile({"fiscal_convention": "martian"}).fiscal_convention == (
         "calendar"
     )
+
+
+class TestCountedThings:
+    """A measure names what it counts, and that beats the document's currency."""
+
+    def test_shipments_in_millions_are_shipments_not_rupees(self):
+        fact = normalise(
+            predicate="express parcel shipments",
+            unit="million",
+            value_text="740",
+            value_number=740,
+            currency="",
+        )
+        assert fact.unit_class == COUNT
+        assert fact.value_base == pytest.approx(740e6)
+
+    def test_a_bare_count_does_not_pick_up_the_declared_scale(self):
+        fact = normalise(
+            predicate="gateways", unit="", value_text="111", value_number=111, currency=""
+        )
+        assert fact.unit_class == COUNT
+        assert fact.value_base == pytest.approx(111)
+
+    def test_a_monetary_measure_still_inherits_the_declared_scale(self):
+        fact = normalise(
+            predicate="revenue from services",
+            unit="",
+            value_text="8,142",
+            value_number=8142,
+            currency="",
+        )
+        assert fact.unit_class == CURRENCY
+        assert fact.value_base == pytest.approx(8142 * 1e6)
+
+
+class TestPeriodInMeasureName:
+    """ "FY24 EBITDA margin" and "FY23 EBITDA margin" are one measure at two periods.
+
+    Leaving the year in the name splits the registry so the two can never be compared.
+    """
+
+    def test_the_period_is_moved_out_of_the_measure_name(self):
+        fact = normalise(predicate="FY23 adj. EBITDA", period="")
+        assert fact.predicate == "adj. ebitda"
+        assert fact.period_label == "fy23"
+        assert fact.period.start == date(2022, 4, 1)
+
+    def test_an_explicit_period_field_wins_over_the_one_in_the_name(self):
+        fact = normalise(predicate="FY23 adj. EBITDA", period="FY24")
+        assert fact.predicate == "adj. ebitda"
+        assert fact.period_label == "FY24"
+
+    def test_two_years_of_one_measure_share_a_claim_key_shape(self):
+        first = normalise(predicate="FY23 EBITDA margin", period="")
+        second = normalise(predicate="FY24 EBITDA margin", period="")
+        assert first.predicate == second.predicate == "ebitda margin"
+
+    def test_a_measure_with_no_period_is_untouched(self):
+        assert normalise(predicate="revenue from services").predicate == "revenue from services"
+
+    def test_a_name_that_is_only_a_period_is_left_alone(self):
+        assert normalise(predicate="FY24").predicate == "fy24"

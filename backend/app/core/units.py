@@ -191,7 +191,7 @@ _SIMPLE_UNITS: dict[str, tuple[str, str, float]] = {
 
 # Countable nouns that carry no dimension of their own. Recorded so that "shipments"
 # and "employees" stay distinguishable in the unit label without being convertible.
-_COUNT_NOUNS = {
+COUNT_NOUNS = {
     "shipment",
     "shipments",
     "parcel",
@@ -235,6 +235,29 @@ _COUNT_NOUNS = {
     "cities",
     "count",
     "number",
+    "gateway",
+    "gateways",
+    "trip",
+    "trips",
+    "route",
+    "routes",
+    "partner",
+    "partners",
+    "seller",
+    "sellers",
+    "merchant",
+    "merchants",
+    "order",
+    "orders",
+    "consignment",
+    "consignments",
+    "warehouse",
+    "warehouses",
+    "truck",
+    "trucks",
+    "headcount",
+    "subscriber",
+    "subscribers",
 }
 
 _NUMBER_PATTERN = re.compile(
@@ -426,7 +449,7 @@ def resolve_unit(
         return Unit(canonical=canonical, unit_class=unit_class, factor=factor * scale_factor)
 
     singular = tail[:-1] if tail.endswith("s") else tail
-    if tail in _COUNT_NOUNS or singular in _COUNT_NOUNS:
+    if tail in COUNT_NOUNS or singular in COUNT_NOUNS:
         return Unit(canonical=singular, unit_class=COUNT, factor=scale_factor)
 
     # Unknown but non-empty: keep it as its own class so it is only ever compared with
