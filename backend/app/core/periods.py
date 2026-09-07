@@ -41,25 +41,45 @@ RANGE = "range"
 UNKNOWN = "unknown"
 
 _MONTHS = {
-    "jan": 1, "january": 1,
-    "feb": 2, "february": 2,
-    "mar": 3, "march": 3,
-    "apr": 4, "april": 4,
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
     "may": 5,
-    "jun": 6, "june": 6,
-    "jul": 7, "july": 7,
-    "aug": 8, "august": 8,
-    "sep": 9, "sept": 9, "september": 9,
-    "oct": 10, "october": 10,
-    "nov": 11, "november": 11,
-    "dec": 12, "december": 12,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
 }
 
 _ORDINALS = {
-    "first": 1, "1st": 1, "one": 1,
-    "second": 2, "2nd": 2, "two": 2,
-    "third": 3, "3rd": 3, "three": 3,
-    "fourth": 4, "4th": 4, "four": 4,
+    "first": 1,
+    "1st": 1,
+    "one": 1,
+    "second": 2,
+    "2nd": 2,
+    "two": 2,
+    "third": 3,
+    "3rd": 3,
+    "three": 3,
+    "fourth": 4,
+    "4th": 4,
+    "four": 4,
 }
 
 
@@ -125,7 +145,9 @@ def fiscal_year_bounds(end_year: int, convention: str = INDIA) -> tuple[date, da
     return start, _end_of_month(end_year_month, end_month)
 
 
-def fiscal_quarter_bounds(end_year: int, quarter: int, convention: str = INDIA) -> tuple[date, date]:
+def fiscal_quarter_bounds(
+    end_year: int, quarter: int, convention: str = INDIA
+) -> tuple[date, date]:
     start, _ = fiscal_year_bounds(end_year, convention)
     q_year, q_month = _shift_months(start.year, start.month, 3 * (quarter - 1))
     q_end_year, q_end_month = _shift_months(q_year, q_month, 2)
@@ -306,7 +328,9 @@ def _try_quarter(text: str, convention: str) -> Period | None:
         if not match:
             continue
         groups = match.groupdict()
-        quarter = int(groups["q"]) if groups.get("q") else _ORDINALS.get(groups.get("word", "").lower())
+        quarter = (
+            int(groups["q"]) if groups.get("q") else _ORDINALS.get(groups.get("word", "").lower())
+        )
         if not quarter:
             continue
         end_year = _resolve_span_years(groups["y1"], groups.get("y2"))

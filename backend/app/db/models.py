@@ -310,7 +310,9 @@ class Relation(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    left_fact_id: Mapped[int] = mapped_column(ForeignKey("facts.id", ondelete="CASCADE"), index=True)
+    left_fact_id: Mapped[int] = mapped_column(
+        ForeignKey("facts.id", ondelete="CASCADE"), index=True
+    )
     right_fact_id: Mapped[int] = mapped_column(
         ForeignKey("facts.id", ondelete="CASCADE"), index=True
     )
@@ -383,7 +385,9 @@ class LlmCall(Base):
     __tablename__ = "llm_calls"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"), index=True)
+    job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL"), index=True
+    )
     document_id: Mapped[int | None] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"), index=True
     )
