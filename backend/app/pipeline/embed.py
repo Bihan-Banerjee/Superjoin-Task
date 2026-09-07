@@ -40,11 +40,19 @@ def _load_model():
     with _model_lock:
         if _model is not None:
             return _model
+        import os
+
         from fastembed import TextEmbedding
 
-        name = get_settings().embedding_model
-        logger.info("loading embedding model %s", name)
-        _model = TextEmbedding(model_name=name)
+        settings = get_settings()
+        name = settings.embedding_model
+        # ONNX Runtime otherwise picks a conservative thread count and this model ends up
+        # running near single-threaded, which makes the registry stage the slowest part of an
+        # ingest. Capped rather than set to the core count: beyond about eight threads the
+        # per-batch coordination costs more than it saves on a model this small.
+        threads = settings.embedding_threads or max(1, min(8, os.cpu_count() or 1))
+        logger.info("loading embedding model %s with %d threads", name, threads)
+        _model = TextEmbedding(model_name=name, threads=threads)
         _dimensions = len(next(iter(_model.embed(["dimension probe"]))))
         return _model
 
