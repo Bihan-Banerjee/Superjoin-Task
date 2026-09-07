@@ -86,6 +86,22 @@ def entity_alias_key(text: str) -> str:
     return " ".join(stripped.split()) or alias_key(text)
 
 
+def _same_organisation(left: str, right: str) -> bool:
+    """Whether two names can be the same organisation, ignoring legal form.
+
+    An embedding score is not sufficient on its own here, and relying on it did real damage:
+    "Delhivery Limited" and "Delhivery Corp Limited, United Kingdom" score highly and are
+    two different legal entities, so the subsidiary absorbed 245 facts belonging to the
+    parent. Facts about different entities must never be compared, which makes a wrong merge
+    much worse than a missed one.
+
+    So a merge additionally requires the same tokens once legal forms and articles are
+    stripped. That still resolves "Delhivery Ltd" against "Delhivery Limited", and refuses
+    anything carrying a distinguishing word the other lacks.
+    """
+    return set(entity_alias_key(left).split()) == set(entity_alias_key(right).split())
+
+
 @dataclass
 class _Candidate:
     surface: str
@@ -389,10 +405,11 @@ class EntityRegistry:
                 )
                 if matches:
                     index, score = matches[0]
-                    if score >= ENTITY_LINK_THRESHOLD:
-                        self._add_alias(self._entities[index], surface)
+                    other = self._entities[index]
+                    if score >= ENTITY_LINK_THRESHOLD and _same_organisation(surface, other.name):
+                        self._add_alias(other, surface)
                         self.report.entities_linked += 1
-                        resolved[surface] = self._entities[index]
+                        resolved[surface] = other
                         continue
 
             resolved[surface] = self._create(surface, None, vector=query)

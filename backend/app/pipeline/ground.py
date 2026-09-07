@@ -259,7 +259,7 @@ def _check_shape(candidate: dict[str, Any], minimum_confidence: float) -> Reject
         )
 
     predicate = str(candidate["predicate"]).strip()
-    if len(predicate) < 3:
+    if len(predicate) < 3 or not _names_a_measure(predicate):
         return Rejection(
             reason=PREDICATE_UNRESOLVED,
             detail=f"the measure {predicate!r} is too vague to compare against anything",
@@ -274,6 +274,92 @@ def _check_shape(candidate: dict[str, Any], minimum_confidence: float) -> Reject
             candidate=candidate,
         )
     return None
+
+
+# Sentence fragments the extractor sometimes returns instead of a measure. A registry entry
+# named "was" or "increased to" can never be compared with anything, and every fact filed
+# under it is effectively lost while still looking like a result.
+_NOT_A_MEASURE = {
+    "was",
+    "were",
+    "is",
+    "are",
+    "has",
+    "have",
+    "had",
+    "increased to",
+    "decreased to",
+    "increased by",
+    "decreased by",
+    "rose to",
+    "fell to",
+    "grew to",
+    "amounted to",
+    "stood at",
+    "as at",
+    "as of",
+    "total",
+    "value",
+    "amount",
+    "number",
+    "figure",
+    "data",
+    "item",
+    "line item",
+    "particulars",
+    "details",
+    "description",
+    "name",
+    "type",
+    "category",
+    "status",
+    "note",
+    "notes",
+    "other",
+    "others",
+    "misc",
+    "n/a",
+}
+
+_MEASURE_STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "of",
+    "in",
+    "for",
+    "to",
+    "at",
+    "on",
+    "by",
+    "and",
+    "or",
+    "as",
+    "was",
+    "were",
+    "is",
+    "are",
+    "with",
+    "from",
+}
+
+
+def _names_a_measure(predicate: str) -> bool:
+    """Whether a predicate names something measurable rather than describing a sentence.
+
+    Two checks. It must not be one of the fragments above, and once function words are
+    removed something has to remain — "of the total" is not a measure, "revenue from
+    services" is.
+    """
+    normalised = " ".join(predicate.lower().split())
+    if normalised in _NOT_A_MEASURE:
+        return False
+    content = [
+        token
+        for token in re.findall(r"[a-z0-9%]+", normalised)
+        if token not in _MEASURE_STOPWORDS and len(token) > 1
+    ]
+    return bool(content)
 
 
 _VAGUE_SUBJECTS = {

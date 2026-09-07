@@ -98,9 +98,7 @@ def settings(workspace: Path) -> Settings:
         patch.setenv("ENABLE_VISION", "true")
         patch.setenv("PARSE_WORKERS", "1")
         patch.setenv("DATA_DIR", str(workspace / "data"))
-        patch.setenv(
-            "DATABASE_URL", f"sqlite+pysqlite:///{(workspace / 'test.sqlite').as_posix()}"
-        )
+        patch.setenv("DATABASE_URL", f"sqlite+pysqlite:///{(workspace / 'test.sqlite').as_posix()}")
 
         reset_settings_cache()
         resolved = get_settings()

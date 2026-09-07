@@ -362,17 +362,13 @@ class TestCrossDocument:
     async def test_a_different_year_is_reconciled_rather_than_flagged(self, corpus):
         with session_scope() as session:
             relations = list(
-                session.scalars(
-                    select(Relation).where(Relation.relation_type == REL_RECONCILED)
-                )
+                session.scalars(select(Relation).where(Relation.relation_type == REL_RECONCILED))
             )
         assert any(relation.dimension == "period" for relation in relations)
 
     async def test_differently_worded_measures_resolve_to_one_registry_entry(self, corpus):
         with session_scope() as session:
-            measure = session.scalar(
-                select(Measure).where(Measure.name == "revenue from services")
-            )
+            measure = session.scalar(select(Measure).where(Measure.name == "revenue from services"))
         assert measure.document_count == 2
 
     async def test_facts_from_the_same_page_are_not_compared_with_each_other(self, corpus):
@@ -431,9 +427,7 @@ class TestContradiction:
     async def test_an_unexplained_gap_is_a_contradiction_with_severity(self, corpus):
         with session_scope() as session:
             contradictions = list(
-                session.scalars(
-                    select(Relation).where(Relation.relation_type == REL_CONTRADICTS)
-                )
+                session.scalars(select(Relation).where(Relation.relation_type == REL_CONTRADICTS))
             )
         for relation in contradictions:
             assert relation.severity > 0
@@ -472,14 +466,10 @@ class TestIncrementalIngest:
 
         with session_scope() as session:
             after = list(session.scalars(select(Relation)))
-            new_document = session.scalar(
-                select(Document).where(Document.filename == "deck.pdf")
-            )
+            new_document = session.scalar(select(Document).where(Document.filename == "deck.pdf"))
             new_fact_ids = {
                 fact.id
-                for fact in session.scalars(
-                    select(Fact).where(Fact.document_id == new_document.id)
-                )
+                for fact in session.scalars(select(Fact).where(Fact.document_id == new_document.id))
             }
 
         added = [relation for relation in after][before_relations:]
@@ -513,3 +503,24 @@ class TestFailureHandling:
 
         assert rejections, "a page whose call failed must be visible, not silently empty"
         assert document.status == DOC_STATUS_READY
+
+
+class TestEntityMerging:
+    """Facts about different entities must never be compared.
+
+    An embedding score alone merged a UK subsidiary with its parent and moved 245 facts
+    under the wrong name, so a merge also requires the same tokens once legal forms are
+    stripped.
+    """
+
+    def test_legal_form_variants_are_one_entity(self):
+        from app.pipeline.canonicalize import _same_organisation
+
+        assert _same_organisation("Delhivery Limited", "Delhivery Ltd")
+        assert _same_organisation("Reserve Bank of India", "The Reserve Bank of India")
+
+    def test_a_qualified_subsidiary_is_a_different_entity(self):
+        from app.pipeline.canonicalize import _same_organisation
+
+        assert not _same_organisation("Delhivery Limited", "Delhivery Corp Limited, United Kingdom")
+        assert not _same_organisation("Delhivery Limited", "Delhivery USA Inc")

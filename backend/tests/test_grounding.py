@@ -1,6 +1,7 @@
 from app.pipeline.ground import (
     AMBIGUOUS_SHORT_QUOTE,
     DUPLICATE,
+    PREDICATE_UNRESOLVED,
     QUOTE_NOT_FOUND,
     SUBJECT_UNRESOLVED,
     VALUE_ABSENT_FROM_QUOTE,
@@ -214,3 +215,25 @@ class TestCompositeQuotes:
             page,
         )
         assert not outcome.grounded
+
+
+class TestMeasureNames:
+    """A predicate has to name something measurable, not describe a sentence.
+
+    A registry entry called "was" or "increased to" can never be compared with anything, and
+    every fact filed under it is lost while still looking like a result.
+    """
+
+    def test_a_verb_fragment_is_not_a_measure(self):
+        for fragment in ("was", "increased to", "stood at", "total", "n/a"):
+            outcome = ground_candidates([candidate(predicate=fragment)], PAGE)
+            assert outcome.rejected[0].reason == PREDICATE_UNRESOLVED, fragment
+
+    def test_a_phrase_of_only_function_words_is_not_a_measure(self):
+        outcome = ground_candidates([candidate(predicate="of the")], PAGE)
+        assert outcome.rejected[0].reason == PREDICATE_UNRESOLVED
+
+    def test_real_measures_survive(self):
+        for name in ("revenue from services", "ebitda margin", "number of gateways"):
+            outcome = ground_candidates([candidate(predicate=name)], PAGE)
+            assert outcome.grounded, name
