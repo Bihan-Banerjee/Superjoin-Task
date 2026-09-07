@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str = ""
     gemini_extraction_model: str = "gemini-3.1-flash-lite"
-    gemini_adjudication_model: str = "gemini-3-flash-preview"
+    gemini_adjudication_model: str = "gemini-3.1-flash-lite"
     gemini_vision_model: str = "gemini-3.1-flash-lite"
     # Output tokens the 2.5 models may spend reasoning before answering. Zero for reading
     # tasks; adjudication is genuinely a reasoning task and gets an allowance.
@@ -48,8 +48,9 @@ class Settings(BaseSettings):
 
     llm_concurrency: int = Field(default=3, ge=1, le=64)
     llm_rate_limit_rpm: int = Field(default=15, ge=0)
-    # Adjudication runs on a stronger model with a tighter quota, so it gets its own budget.
-    llm_adjudication_rate_limit_rpm: int = Field(default=4, ge=0)
+    # Adjudication has its own budget: it may run on a different model from extraction,
+    # and quotas are enforced per model.
+    llm_adjudication_rate_limit_rpm: int = Field(default=12, ge=0)
     llm_cache_enabled: bool = True
     llm_max_calls_per_job: int = Field(default=0, ge=0)
     llm_timeout_seconds: float = Field(default=180.0, gt=0)

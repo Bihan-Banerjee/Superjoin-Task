@@ -29,9 +29,14 @@ from app.llm.providers import build_provider
 
 logger = logging.getLogger(__name__)
 
-# How long to wait after a quota rejection. Sized for a per-minute allowance, which is what
-# every free tier this runs against uses.
+# How long to wait after a quota rejection. Sized for a per-minute allowance.
 RATE_LIMIT_BACKOFF_SECONDS = 62.0
+
+# Consecutive quota rejections after which a model is treated as spent for this job. Free
+# tiers impose a daily cap as well as a per-minute one, and no amount of waiting clears the
+# daily one. Without this, every remaining call spends four minutes backing off before
+# failing anyway — an ingest that looks hung rather than one that reports a problem.
+QUOTA_FAILURES_BEFORE_GIVING_UP = 3
 
 
 @dataclass
@@ -154,6 +159,7 @@ class LlmClient:
         # above five requests a minute. A single shared budget either throttles extraction to
         # the slower model's limit or drives adjudication into a 429 on every call.
         self._limiters: dict[str, RateLimiter] = {}
+        self._quota_failures: dict[str, int] = {}
         self._caches = [
             # Recorded responses ship with the repository and are read-only; the runtime
             # cache is written to as the pipeline goes.
@@ -191,6 +197,19 @@ class LlmClient:
                 self._fallback_requested = False
                 return None
         return self._fallback
+
+    def _note_quota_failure(self, model: str) -> None:
+        self._quota_failures[model] = self._quota_failures.get(model, 0) + 1
+        if self._quota_failures[model] == QUOTA_FAILURES_BEFORE_GIVING_UP:
+            logger.error(
+                "%s has rejected %d consecutive calls for quota; treating it as exhausted "
+                "for the rest of this job",
+                model,
+                QUOTA_FAILURES_BEFORE_GIVING_UP,
+            )
+
+    def _quota_exhausted(self, model: str) -> bool:
+        return self._quota_failures.get(model, 0) >= QUOTA_FAILURES_BEFORE_GIVING_UP
 
     def _limiter_for(self, purpose: str, model: str) -> RateLimiter:
         limiter = self._limiters.get(model)
@@ -271,17 +290,27 @@ class LlmClient:
 
         for provider_index, (candidate, candidate_model) in enumerate(candidates):
             for attempt in range(1, attempts + 1):
+                if self._quota_exhausted(candidate_model):
+                    last_error = LlmError(
+                        f"{candidate_model} is out of quota for this job", retryable=False
+                    )
+                    break
                 try:
                     await self._limiter_for(request.purpose, candidate_model).acquire()
                     response = await candidate.complete(request, candidate_model)
                     response.attempts = attempt
+                    self._quota_failures.pop(candidate_model, None)
                     self._record(request, response, key, ok=True)
                     return response
                 except LlmError as error:
                     last_error = error
+                    if error.rate_limited:
+                        self._note_quota_failure(candidate_model)
                     if not error.retryable or attempt == attempts:
                         break
                     if error.rate_limited:
+                        if self._quota_exhausted(candidate_model):
+                            break
                         # Wait out the quota window rather than spending the remaining
                         # attempts inside it.
                         delay = RATE_LIMIT_BACKOFF_SECONDS * (0.75 + random.random() * 0.5)

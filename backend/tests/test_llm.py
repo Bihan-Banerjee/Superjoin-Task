@@ -122,3 +122,55 @@ class TestCacheKey:
             purpose="extract", system="s", user="u", schema=schema, images=[b"png-bytes"]
         )
         assert without.cache_key("gemini", "m") != with_image.cache_key("gemini", "m")
+
+
+class TestQuotaCircuitBreaker:
+    """A daily quota cannot be waited out, so retrying against one is pure delay.
+
+    Free tiers impose a per-day cap as well as a per-minute one. Without a breaker every
+    remaining call spends four minutes backing off before failing anyway, which looks like a
+    hung ingest rather than a reported problem.
+    """
+
+    async def test_a_model_is_abandoned_after_repeated_quota_rejections(self, monkeypatch):
+        from app.config import Settings
+        from app.llm.base import PURPOSE_EXTRACT, LlmError, LlmRequest, Provider
+        from app.llm.client import QUOTA_FAILURES_BEFORE_GIVING_UP, LlmClient
+
+        class AlwaysOutOfQuota(Provider):
+            name = "spent"
+
+            def __init__(self):
+                self.attempts = 0
+
+            def supports_vision(self):
+                return False
+
+            def model_for(self, purpose, *, vision=False):
+                return "spent-model"
+
+            async def complete(self, request, model):
+                self.attempts += 1
+                raise LlmError("429 quota exceeded", rate_limited=True)
+
+        provider = AlwaysOutOfQuota()
+        settings = Settings(
+            llm_provider="spent",
+            llm_cache_enabled=False,
+            llm_rate_limit_rpm=0,
+            llm_max_attempts=2,
+        )
+        # No real waiting: the point under test is how many times it tries, not how long.
+        monkeypatch.setattr("app.llm.client.RATE_LIMIT_BACKOFF_SECONDS", 0.0)
+        client = LlmClient(settings, provider=provider)
+
+        request = LlmRequest(
+            purpose=PURPOSE_EXTRACT, system="s", user="u", schema={"type": "object"}
+        )
+        for _ in range(6):
+            with pytest.raises(LlmError):
+                await client.complete(request)
+
+        assert provider.attempts <= QUOTA_FAILURES_BEFORE_GIVING_UP + 1, (
+            "an exhausted model should stop being called, not retried on every request"
+        )
