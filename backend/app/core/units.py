@@ -312,7 +312,11 @@ def normalize_scale(text: str | None) -> float | None:
 
 
 _SCALE_TOKEN = "|".join(
-    sorted((re.escape(token) for token in SCALES if token not in {"m", "b", "k"}), key=len, reverse=True)
+    sorted(
+        (re.escape(token) for token in SCALES if token not in {"m", "b", "k"}),
+        key=len,
+        reverse=True,
+    )
 )
 _CURRENCY_TOKEN = "|".join(
     sorted((re.escape(token) for token in CURRENCY_ALIASES), key=len, reverse=True)
@@ -405,7 +409,9 @@ def resolve_unit(
 
     if resolved_currency:
         label = f"{resolved_currency} {_scale_label(scale_factor)}".strip()
-        return Unit(canonical=label, unit_class=CURRENCY, factor=scale_factor, currency=resolved_currency)
+        return Unit(
+            canonical=label, unit_class=CURRENCY, factor=scale_factor, currency=resolved_currency
+        )
 
     if not tail:
         if scale_factor != 1.0:
@@ -426,6 +432,23 @@ def resolve_unit(
     # Unknown but non-empty: keep it as its own class so it is only ever compared with
     # an identically-labelled unit, never silently coerced into something else.
     return Unit(canonical=tail, unit_class=f"other:{singular}", factor=scale_factor)
+
+
+SCALE_LABELS = frozenset({"thousand", "lakh", "million", "crore", "billion", "trillion"})
+
+
+def is_bare_scale(unit: Unit | None) -> bool:
+    """True when a unit says how big the number is but not what it measures.
+
+    "in millions" with no noun beside it is a scale, not a unit. The caller needs to know
+    the difference so it can decide whether the document's declared currency applies: it
+    does to a bare scale, and it must not to a percentage or a shipment count.
+    """
+    if unit is None:
+        return False
+    if unit.currency or unit.unit_class != COUNT:
+        return False
+    return unit.canonical in SCALE_LABELS or unit.canonical.startswith("x")
 
 
 def _scale_label(factor: float) -> str:
@@ -468,23 +491,25 @@ def relative_difference(left: float, right: float) -> float:
     return abs(left - right) / scale
 
 
-# How much two values may differ and still count as the same claim. Currency figures
-# are routinely rounded to the nearest crore in a deck and reported to the rupee in a
-# statement, so they get the loosest band; counts get none at all.
+# Floor on how much two values may differ and still count as the same claim. These are
+# deliberately tight: they exist to absorb floating point noise, not to express what counts
+# as agreement. That judgement belongs to `rounding_tolerance` below, which derives the band
+# from how precisely each side was actually written. A flat one percent band would call
+# 6.5% and 6.6% GDP growth the same figure, and they are not.
 CLASS_TOLERANCE: dict[str, float] = {
-    CURRENCY: 0.01,
-    RATIO: 0.02,
-    RATIO_CHANGE: 0.02,
-    COUNT: 0.005,
-    MASS: 0.01,
-    DISTANCE: 0.01,
-    AREA: 0.01,
-    DURATION: 0.02,
-    ENERGY: 0.01,
-    DIMENSIONLESS: 0.01,
+    CURRENCY: 0.0005,
+    RATIO: 0.001,
+    RATIO_CHANGE: 0.001,
+    COUNT: 0.0005,
+    MASS: 0.001,
+    DISTANCE: 0.001,
+    AREA: 0.001,
+    DURATION: 0.001,
+    ENERGY: 0.001,
+    DIMENSIONLESS: 0.001,
 }
 
-DEFAULT_TOLERANCE = 0.01
+DEFAULT_TOLERANCE = 0.001
 
 
 def tolerance_for(unit_class: str | None) -> float:
@@ -515,7 +540,7 @@ def _rounding_step(value: float) -> float:
     if "." in text:
         decimals = len(text.split(".", 1)[1])
         if decimals > 0:
-            return 0.5 * (10 ** -decimals)
+            return 0.5 * (10**-decimals)
     integer = int(abs(value))
     trailing = 0
     while integer and integer % 10 == 0:
