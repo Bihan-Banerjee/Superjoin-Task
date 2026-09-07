@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=180.0, gt=0)
     llm_max_attempts: int = Field(default=4, ge=1, le=10)
 
+    parse_workers: int = Field(default=0, ge=0, le=32)
+
     enable_vision: bool = True
     vision_render_dpi: int = Field(default=140, ge=72, le=400)
 
@@ -86,6 +88,13 @@ class Settings(BaseSettings):
         if self.database_url:
             return self.database_url
         return f"sqlite+pysqlite:///{(self.data_dir / 'knowledge.sqlite').as_posix()}"
+
+    @property
+    def resolved_parse_workers(self) -> int:
+        """Processes to spread page parsing across. Zero means choose from the machine."""
+        if self.parse_workers:
+            return self.parse_workers
+        return max(1, min(8, (os.cpu_count() or 2) - 1))
 
     def ensure_directories(self) -> None:
         for path in (self.data_dir, self.upload_dir, self.cache_dir):
