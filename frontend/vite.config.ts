@@ -16,12 +16,5 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          pdf: ["pdfjs-dist"],
-        },
-      },
-    },
   },
 });
