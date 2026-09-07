@@ -85,6 +85,11 @@ and anything that does not match is discarded, so an invented quote loses the fa
 3. Record the value exactly as printed in value_text, and the same number without grouping \
 separators in value_number.
 
+3a. Name the measure at full length. A document that reports "revenue from services" and \
+"revenue from traded goods" separately means different things by them, and shortening either \
+to "revenue" makes two different quantities look like one. Keep every qualifying word the \
+page uses.
+
 4. Units and scale carry meaning. If the page or the document declares a default scale, \
 apply it. State the unit you are using even when it comes from that declaration rather \
 than from beside the number.

@@ -24,6 +24,7 @@ from app.llm.base import (
     LlmResponse,
     Provider,
     extract_json,
+    salvage_truncated_json,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ def _raise_for_status(response: httpx.Response, provider: str) -> None:
     raise LlmError(
         f"{provider} returned {response.status_code}: {body}",
         retryable=response.status_code in _RETRYABLE_STATUS,
+        rate_limited=response.status_code == 429,
     )
 
 
@@ -62,6 +64,11 @@ class GeminiProvider(Provider):
             return self._settings.gemini_adjudication_model
         return self._settings.gemini_extraction_model
 
+    def _thinking_budget(self, purpose: str) -> int:
+        if purpose == PURPOSE_ADJUDICATE:
+            return self._settings.gemini_thinking_budget
+        return 0
+
     async def complete(self, request: LlmRequest, model: str) -> LlmResponse:
         parts: list[dict[str, Any]] = [{"text": request.user}]
         for image in request.images:
@@ -82,6 +89,13 @@ class GeminiProvider(Provider):
                 "maxOutputTokens": request.max_output_tokens,
                 "responseMimeType": "application/json",
                 "responseSchema": _to_gemini_schema(request.schema),
+                # The 2.5 models reason before answering, and that reasoning is drawn from
+                # the same output budget as the response. Left on its default the model
+                # spends the budget thinking and the JSON is cut off mid-object, which
+                # surfaces as a truncated page rather than as a wrong answer. Extraction is
+                # a reading task and does not need it; adjudication is a reasoning task and
+                # gets an allowance.
+                "thinkingConfig": {"thinkingBudget": self._thinking_budget(request.purpose)},
             },
         }
 
@@ -104,12 +118,26 @@ class GeminiProvider(Provider):
         text = "".join(
             part.get("text", "") for part in (candidate.get("content") or {}).get("parts", [])
         )
-        if finish == "MAX_TOKENS" and not text.rstrip().endswith(("}", "]")):
-            raise LlmError("gemini response was truncated by the output limit", retryable=False)
+        truncated = finish == "MAX_TOKENS" and not text.rstrip().endswith(("}", "]"))
+        if truncated:
+            salvaged = salvage_truncated_json(text)
+            if salvaged is None:
+                raise LlmError(
+                    "gemini response was truncated by the output limit before any complete "
+                    "item was written",
+                    retryable=False,
+                )
+            logger.warning(
+                "gemini response was truncated; recovered %d complete item(s) from it",
+                len(salvaged.get("facts", [])) if isinstance(salvaged, dict) else 0,
+            )
+            data = salvaged
+        else:
+            data = extract_json(text)
 
         usage = body.get("usageMetadata") or {}
         return LlmResponse(
-            data=extract_json(text),
+            data=data,
             raw_text=text,
             provider=self.name,
             model=model,

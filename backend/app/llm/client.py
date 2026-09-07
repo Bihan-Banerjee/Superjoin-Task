@@ -17,6 +17,7 @@ from typing import Any
 
 from app.config import Settings, get_settings
 from app.llm.base import (
+    PURPOSE_ADJUDICATE,
     BudgetExceeded,
     LlmError,
     LlmRequest,
@@ -27,6 +28,10 @@ from app.llm.base import (
 from app.llm.providers import build_provider
 
 logger = logging.getLogger(__name__)
+
+# How long to wait after a quota rejection. Sized for a per-minute allowance, which is what
+# every free tier this runs against uses.
+RATE_LIMIT_BACKOFF_SECONDS = 62.0
 
 
 @dataclass
@@ -143,7 +148,12 @@ class LlmClient:
         self._fallback = fallback
         self._fallback_requested = bool(self._settings.llm_fallback_provider)
         self._semaphore = asyncio.Semaphore(self._settings.llm_concurrency)
-        self._limiter = RateLimiter(self._settings.llm_rate_limit_rpm)
+        # One limiter per model rather than one for the client. Quotas are enforced per
+        # model, and the two this pipeline uses differ by a factor of three: extraction runs
+        # on a model with free-tier headroom, adjudication on a stronger one that rejects
+        # above five requests a minute. A single shared budget either throttles extraction to
+        # the slower model's limit or drives adjudication into a 429 on every call.
+        self._limiters: dict[str, RateLimiter] = {}
         self._caches = [
             # Recorded responses ship with the repository and are read-only; the runtime
             # cache is written to as the pipeline goes.
@@ -181,6 +191,18 @@ class LlmClient:
                 self._fallback_requested = False
                 return None
         return self._fallback
+
+    def _limiter_for(self, purpose: str, model: str) -> RateLimiter:
+        limiter = self._limiters.get(model)
+        if limiter is None:
+            rpm = (
+                self._settings.llm_adjudication_rate_limit_rpm
+                if purpose == PURPOSE_ADJUDICATE
+                else self._settings.llm_rate_limit_rpm
+            )
+            limiter = RateLimiter(rpm)
+            self._limiters[model] = limiter
+        return limiter
 
     def supports_vision(self) -> bool:
         try:
@@ -250,7 +272,7 @@ class LlmClient:
         for provider_index, (candidate, candidate_model) in enumerate(candidates):
             for attempt in range(1, attempts + 1):
                 try:
-                    await self._limiter.acquire()
+                    await self._limiter_for(request.purpose, candidate_model).acquire()
                     response = await candidate.complete(request, candidate_model)
                     response.attempts = attempt
                     self._record(request, response, key, ok=True)
@@ -259,9 +281,14 @@ class LlmClient:
                     last_error = error
                     if not error.retryable or attempt == attempts:
                         break
-                    # Full jitter: several workers hitting the same rate limit must not
-                    # retry in lockstep, or they simply collide again.
-                    delay = min(2 ** (attempt - 1), 20) * (0.5 + random.random() * 0.5)
+                    if error.rate_limited:
+                        # Wait out the quota window rather than spending the remaining
+                        # attempts inside it.
+                        delay = RATE_LIMIT_BACKOFF_SECONDS * (0.75 + random.random() * 0.5)
+                    else:
+                        # Full jitter: several workers hitting the same limit must not retry
+                        # in lockstep, or they simply collide again.
+                        delay = min(2 ** (attempt - 1), 20) * (0.5 + random.random() * 0.5)
                     logger.warning(
                         "%s call failed (attempt %d/%d), retrying in %.1fs: %s",
                         candidate.name,

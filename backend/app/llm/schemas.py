@@ -126,9 +126,11 @@ _FACT_SCHEMA: dict[str, Any] = {
         "predicate": {
             "type": "string",
             "description": (
-                "What is measured or asserted, as a short noun phrase without the subject, "
-                "the period or the value. For example 'revenue from services', "
-                "'headline inflation', 'registered office address'."
+                "What is measured or asserted, as a noun phrase without the subject, the "
+                "period or the value. Keep every word that changes what is being measured: "
+                "'revenue from services' is not 'revenue', and 'core inflation' is not "
+                "'inflation', because a document reporting both means different things by "
+                "them. Copy the wording the page uses rather than shortening it."
             ),
         },
         "value_text": {

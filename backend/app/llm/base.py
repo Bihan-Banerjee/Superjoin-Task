@@ -38,9 +38,15 @@ PURPOSE_REGISTRY = "registry"
 class LlmError(RuntimeError):
     """A model call that could not be completed."""
 
-    def __init__(self, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self, message: str, *, retryable: bool = False, rate_limited: bool = False
+    ) -> None:
         super().__init__(message)
-        self.retryable = retryable
+        self.retryable = retryable or rate_limited
+        # A quota rejection is not a transient blip and must not be retried on the ordinary
+        # exponential schedule: on a five-per-minute allowance, retrying after one second
+        # simply burns two more attempts against the same exhausted window.
+        self.rate_limited = rate_limited
 
 
 class BudgetExceeded(LlmError):
@@ -157,6 +163,79 @@ def extract_json(text: str) -> Any:
         return json.loads(sliced)
     except json.JSONDecodeError as error:
         raise LlmError(f"model response was not valid JSON: {error}", retryable=True) from error
+
+
+def salvage_truncated_json(text: str) -> Any | None:
+    """Recover the complete items from a response that was cut off mid-write.
+
+    A truncated extraction is usually a long list whose last element is incomplete. Discarding
+    the whole response loses every fact that *was* written correctly, and those facts still
+    have to survive grounding afterwards, so keeping them costs no accuracy.
+
+    Walks the text tracking string and bracket state, rewinds to the last point where the
+    structure was consistent, and closes what is still open.
+    """
+    start = min((index for index in (text.find("{"), text.find("[")) if index >= 0), default=-1)
+    if start < 0:
+        return None
+
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+    # Position just after the last element that closed cleanly at depth 1 or 2.
+    safe_end = -1
+
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]":
+            if not stack or stack[-1] != char:
+                break
+            stack.pop()
+            if len(stack) <= 2:
+                safe_end = index + 1
+
+    if safe_end < 0:
+        return None
+
+    repaired = text[start:safe_end]
+    # Re-walk the kept prefix to learn what is still open, then close it.
+    depth: list[str] = []
+    in_string = False
+    escaped = False
+    for char in repaired:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            depth.append("}" if char == "{" else "]")
+        elif char in "}]" and depth:
+            depth.pop()
+
+    candidate = repaired.rstrip().rstrip(",") + "".join(reversed(depth))
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
 
 
 def _outermost_json(text: str) -> str | None:
