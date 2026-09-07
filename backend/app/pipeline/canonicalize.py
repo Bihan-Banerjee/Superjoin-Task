@@ -32,6 +32,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -113,6 +114,15 @@ class RegistryReport:
 
 
 class MeasureRegistry:
+    """Resolves measure surfaces, embedding in batches and keeping the matrix incrementally.
+
+    The obvious implementation — embed each surface as it comes up, and stack the registry's
+    vectors to compare against — is quadratic and dominated by per-call overhead. On a single
+    hundred-page filing it took longer than the extraction it was resolving. Embedding every
+    surface in one pass and appending to a kept matrix makes the stage proportional to the
+    number of *distinct* measures rather than to the number of facts.
+    """
+
     def __init__(self, session: Session, *, document_id: int | None = None) -> None:
         self._session = session
         self._document_id = document_id
@@ -121,18 +131,15 @@ class MeasureRegistry:
         for measure in self._measures:
             for alias in [measure.name, *(measure.aliases or [])]:
                 self._by_alias.setdefault(alias_key(alias), measure)
-        self.report = RegistryReport()
 
-    def _matrix(self, unit_class: str | None):
-        rows = [
-            measure
+        dimensions = embed.dimensions()
+        self._vectors: list[np.ndarray] = [
+            embed.from_blob(measure.embedding, dimensions)
+            if measure.embedding
+            else np.zeros(dimensions, dtype=np.float32)
             for measure in self._measures
-            if measure.embedding and _classes_compatible(measure.unit_class, unit_class)
         ]
-        if not rows:
-            return [], None
-        matrix = embed.stack([measure.embedding for measure in rows], embed.dimensions())
-        return rows, matrix
+        self.report = RegistryReport()
 
     def lookup_exact(self, surface: str) -> Measure | None:
         return self._by_alias.get(alias_key(surface))
@@ -146,6 +153,7 @@ class MeasureRegistry:
         resolved: dict[str, Measure] = {}
         ambiguous: list[_Candidate] = []
 
+        pending: list[tuple[str, str | None, str]] = []
         for surface, unit_class, example in candidates:
             if not surface.strip() or surface in resolved:
                 continue
@@ -153,15 +161,31 @@ class MeasureRegistry:
             if existing is not None:
                 resolved[surface] = existing
                 self.report.measures_linked += 1
+            else:
+                pending.append((surface, unit_class, example))
+
+        if not pending:
+            return resolved
+
+        # One inference for every surface that needs one, rather than one per surface.
+        queries = embed.embed_texts([surface for surface, _, _ in pending])
+
+        for (surface, unit_class, example), query in zip(pending, queries, strict=False):
+            # Re-checked inside the loop: an earlier candidate in this same batch may have
+            # created the measure this one should link to.
+            existing = self.lookup_exact(surface)
+            if existing is not None:
+                resolved[surface] = existing
+                self.report.measures_linked += 1
                 continue
 
-            match, score = self._nearest(surface, unit_class)
+            match, score = self._nearest(query, unit_class)
             if match is not None and score >= LINK_THRESHOLD:
                 self._add_alias(match, surface)
                 resolved[surface] = match
                 self.report.measures_linked += 1
             elif match is None or score <= CREATE_THRESHOLD:
-                resolved[surface] = self._create(surface, unit_class, example)
+                resolved[surface] = self._create(surface, unit_class, example, vector=query)
             else:
                 ambiguous.append(_Candidate(surface, unit_class, example))
 
@@ -169,16 +193,24 @@ class MeasureRegistry:
             resolved.update(await self._resolve_with_model(ambiguous, client))
         return resolved
 
-    def _nearest(self, surface: str, unit_class: str | None) -> tuple[Measure | None, float]:
-        rows, matrix = self._matrix(unit_class)
-        if matrix is None:
+    def _nearest(
+        self, query: np.ndarray, unit_class: str | None
+    ) -> tuple[Measure | None, float]:
+        """Closest registered measure of a compatible unit class."""
+        eligible = [
+            index
+            for index, measure in enumerate(self._measures)
+            if _classes_compatible(measure.unit_class, unit_class)
+        ]
+        if not eligible:
             return None, 0.0
-        query = embed.embed_text(surface)
+
+        matrix = np.vstack([self._vectors[index] for index in eligible])
         matches = embed.top_matches(query, matrix, limit=1, threshold=0.0)
         if not matches:
             return None, 0.0
-        index, score = matches[0]
-        return rows[index], score
+        position, score = matches[0]
+        return self._measures[eligible[position]], score
 
     async def _resolve_with_model(
         self, candidates: list[_Candidate], client: LlmClient | None
@@ -258,21 +290,27 @@ class MeasureRegistry:
         example: str,
         *,
         canonical_name: str | None = None,
+        vector: np.ndarray | None = None,
     ) -> Measure:
         name = (canonical_name or surface).strip().lower()
-        slug = _unique_slug(self._session, Measure, slugify(name))
+        # The surface's vector is reused where the canonical name is the surface, which is
+        # the common case; a model-supplied name is different text and needs its own.
+        if vector is None or name != surface.strip().lower():
+            vector = embed.embed_text(name)
+
         measure = Measure(
-            slug=slug,
+            slug=_unique_slug(self._session, Measure, slugify(name)),
             name=name,
             description=example[:500] or None,
             unit_class=unit_class,
             aliases=sorted({surface, name}),
-            embedding=embed.to_blob(embed.embed_text(name)),
+            embedding=embed.to_blob(vector),
             first_seen_document_id=self._document_id,
         )
         self._session.add(measure)
         self._session.flush()
         self._measures.append(measure)
+        self._vectors.append(vector)
         self._by_alias[alias_key(name)] = measure
         self._by_alias[alias_key(surface)] = measure
         self.report.measures_created += 1
@@ -289,6 +327,13 @@ class MeasureRegistry:
 
 
 class EntityRegistry:
+    """Resolves subject surfaces, batched for the same reason as the measure registry.
+
+    This one mattered more: `resolve` was called once per fact rather than once per distinct
+    subject, so a document with eight hundred facts about one company ran eight hundred
+    embedding inferences to answer the same question every time.
+    """
+
     def __init__(self, session: Session, *, document_id: int | None = None) -> None:
         self._session = session
         self._document_id = document_id
@@ -298,48 +343,88 @@ class EntityRegistry:
             for alias in [entity.name, *(entity.aliases or [])]:
                 self._by_alias.setdefault(alias_key(alias), entity)
                 self._by_alias.setdefault(entity_alias_key(alias), entity)
+
+        dimensions = embed.dimensions()
+        self._vectors: list[np.ndarray] = [
+            embed.from_blob(entity.embedding, dimensions)
+            if entity.embedding
+            else np.zeros(dimensions, dtype=np.float32)
+            for entity in self._entities
+        ]
         self.report = RegistryReport()
 
-    def resolve(self, surface: str, entity_type: str | None = None) -> Entity | None:
-        surface = surface.strip()
-        if not surface:
-            return None
+    def resolve_many(self, surfaces: list[str]) -> dict[str, Entity]:
+        """Resolve a batch of subject surfaces, embedding only the unrecognised ones."""
+        resolved: dict[str, Entity] = {}
+        pending: list[str] = []
 
-        for key in (alias_key(surface), entity_alias_key(surface)):
-            existing = self._by_alias.get(key)
+        for raw in surfaces:
+            surface = raw.strip()
+            if not surface or surface in resolved:
+                continue
+            existing = self._lookup(surface)
             if existing is not None:
                 self._add_alias(existing, surface)
                 self.report.entities_linked += 1
+                resolved[surface] = existing
+            elif surface not in pending:
+                pending.append(surface)
+
+        if not pending:
+            return resolved
+
+        queries = embed.embed_texts(pending)
+        for surface, query in zip(pending, queries, strict=False):
+            existing = self._lookup(surface)
+            if existing is not None:
+                self._add_alias(existing, surface)
+                self.report.entities_linked += 1
+                resolved[surface] = existing
+                continue
+
+            if self._vectors:
+                matrix = np.vstack(self._vectors)
+                matches = embed.top_matches(
+                    query, matrix, limit=1, threshold=ENTITY_CREATE_THRESHOLD
+                )
+                if matches:
+                    index, score = matches[0]
+                    if score >= ENTITY_LINK_THRESHOLD:
+                        self._add_alias(self._entities[index], surface)
+                        self.report.entities_linked += 1
+                        resolved[surface] = self._entities[index]
+                        continue
+
+            resolved[surface] = self._create(surface, None, vector=query)
+        return resolved
+
+    def resolve(self, surface: str, entity_type: str | None = None) -> Entity | None:
+        return self.resolve_many([surface]).get(surface.strip())
+
+    def _lookup(self, surface: str) -> Entity | None:
+        for key in (alias_key(surface), entity_alias_key(surface)):
+            existing = self._by_alias.get(key)
+            if existing is not None:
                 return existing
+        return None
 
-        rows = [entity for entity in self._entities if entity.embedding]
-        if rows:
-            matrix = embed.stack([entity.embedding for entity in rows], embed.dimensions())
-            matches = embed.top_matches(
-                embed.embed_text(surface), matrix, limit=1, threshold=ENTITY_CREATE_THRESHOLD
-            )
-            if matches:
-                index, score = matches[0]
-                if score >= ENTITY_LINK_THRESHOLD:
-                    self._add_alias(rows[index], surface)
-                    self.report.entities_linked += 1
-                    return rows[index]
-
-        return self._create(surface, entity_type)
-
-    def _create(self, surface: str, entity_type: str | None) -> Entity:
-        slug = _unique_slug(self._session, Entity, slugify(surface))
+    def _create(
+        self, surface: str, entity_type: str | None, *, vector: np.ndarray | None = None
+    ) -> Entity:
+        if vector is None:
+            vector = embed.embed_text(surface)
         entity = Entity(
-            slug=slug,
+            slug=_unique_slug(self._session, Entity, slugify(surface)),
             name=surface,
             entity_type=entity_type,
             aliases=[surface],
-            embedding=embed.to_blob(embed.embed_text(surface)),
+            embedding=embed.to_blob(vector),
             first_seen_document_id=self._document_id,
         )
         self._session.add(entity)
         self._session.flush()
         self._entities.append(entity)
+        self._vectors.append(vector)
         self._by_alias[alias_key(surface)] = entity
         self._by_alias[entity_alias_key(surface)] = entity
         self.report.entities_created += 1
