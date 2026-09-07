@@ -1,7 +1,20 @@
 # Technical documentation
 
-Living record of the stack, architecture, data model and pipeline. Updated as each
-milestone lands rather than written at the end.
+Living record of the stack, architecture, data model and pipeline. Written as each
+milestone landed rather than reconstructed at the end.
+
+- [Stack](#stack)
+- [Repository layout](#repository-layout)
+- [The four ideas the project rests on](#the-four-ideas-the-project-rests-on)
+- [Core primitives](#core-primitives)
+- [Data model](#data-model)
+- [Pipeline](#pipeline)
+- [Prompt design](#prompt-design)
+- [Performance](#performance)
+- [API](#api)
+- [Interface](#interface)
+- [Testing](#testing)
+- [Configuration](#configuration)
 
 ## Stack
 
@@ -10,41 +23,161 @@ milestone lands rather than written at the end.
 | PDF parsing | PyMuPDF | Word-level bounding boxes, `search_for` for evidence highlighting, and table detection. The bounding boxes are what let a fact point at a rectangle on a page rather than just a page number. |
 | API | FastAPI + Uvicorn | Async request handling, automatic OpenAPI, and native support for the streaming progress endpoint. |
 | Storage | SQLite (WAL) + FTS5 | The whole knowledge layer is one portable file. No server to run, and it can be committed as an evaluation snapshot. FTS5 provides lexical retrieval without a second system. |
-| ORM | SQLAlchemy 2.0 | Typed models, cascade behaviour, and raw SQL when the query is better expressed that way. |
-| Embeddings | fastembed (ONNX, `bge-small-en-v1.5`) | Runs locally on CPU. Candidate generation happens for every pair of facts, so it has to be free and offline. |
-| Language model | Gemini, OpenRouter or Ollama behind one interface | Extraction and adjudication only. Provider is configuration, not architecture. |
+| ORM | SQLAlchemy 2.0 | Typed models, cascade behaviour, and raw SQL where the query is better expressed that way. |
+| Embeddings | fastembed (ONNX, `bge-small-en-v1.5`, 384 dims) | Runs locally on CPU. Candidate generation touches every new fact against the corpus, so it has to be free and offline. |
+| Language model | Gemini, any OpenAI-compatible endpoint, or Ollama behind one interface | Used for extraction, profiling, registry linking and adjudication only. The provider is configuration, not architecture. |
 | Frontend | Vite + React + TypeScript | Fast dev loop, no framework-level opinions to fight. |
-| PDF rendering | pdf.js | Renders the source page in the browser so evidence can be highlighted in place. |
+| Page rendering | PyMuPDF, server-side | See [Interface](#interface) for why this beat pdf.js here. |
+
+### Things deliberately not used
+
+**A graph database.** The brief says a graph database is not the solution, and it is right:
+the interesting part is deciding whether two facts relate, not storing the edge afterwards.
+Relations are a table with two foreign keys. Every query the interface makes is a filter or
+a two-hop join, which SQLite indexes handle without a second system to run and explain.
+
+**A vector index (FAISS, sqlite-vec, pgvector).** Vectors are stored as raw float32 blobs
+and searched with a NumPy dot product over one contiguous matrix. At the corpus sizes this
+system will realistically see — thousands to low tens of thousands of facts — an exact
+scan is fast, has no build step, no tuning, no extra dependency, and no risk of an index
+silently going stale after a delete.
+
+**Currency conversion.** Applying an exchange rate would put a number into the knowledge
+layer that appears in no document, and the rate has its own date and source that would need
+their own provenance. Facts in different currencies are reported as differing on the
+`currency` dimension instead.
 
 ## Repository layout
 
 ```
 backend/app/core/       units, periods, text normalisation, hashing
 backend/app/db/         SQLAlchemy models and engine setup
-backend/app/llm/        provider abstraction, caching, structured output
-backend/app/pipeline/   parse -> classify -> extract -> ground -> normalise -> link
+backend/app/llm/        provider abstraction, caching, prompts, schemas
+backend/app/pipeline/   parse -> classify -> layout -> profile -> extract -> ground
+                        -> normalise -> register -> link
 backend/app/api/        HTTP surface
-frontend/src/           review workbench UI
+backend/scripts/        ingest and snapshot command line tools
+backend/seed/           committed evaluation snapshot
+backend/tests/          unit tests plus end-to-end tests against a stub model
+frontend/src/           review workbench
 samples/                the assignment's starter corpora, committed for reproduction
 ```
+
+## The four ideas the project rests on
+
+Everything else is plumbing around these.
+
+### 1. A fact is a normalised claim, not a sentence
+
+```
+Fact = (subject, measure, qualifiers, period) -> value[unit, scale, currency]
+       + provenance(document, page, character span, bounding boxes, verbatim quote)
+       + basis(actual / estimate / projection / revised / restated / pro forma)
+       + confidence, extractor version, raw model output
+```
+
+Comparison happens on the normalised tuple and never on text. That is what makes
+"₹81,419.7 million" and "₹8,142 Cr" corroborate, and what makes "FY24 revenue" against
+"Q4 FY24 revenue" a containment relationship rather than a contradiction.
+
+Both forms are stored. Dropping the surface form would make the evidence unverifiable;
+dropping the normal form would make comparison impossible.
+
+### 2. Grounding is verified, not trusted
+
+The model returns a verbatim `evidence_quote`. The pipeline then checks it independently:
+
+1. Locate the quote in the page's raw text, tolerating ligatures, soft hyphens, line-break
+   hyphenation and non-breaking spaces.
+2. Confirm the value appears **in the source page** within that span.
+3. Resolve the span to bounding boxes on the rendered page.
+
+Step 2 reads the page and never the model's own quote. Searching the quote as well would
+let a fabricated figure corroborate itself — write any number into the quote and the check
+passes. That was a real defect in this codebase, caught by the end-to-end tests; see
+[Testing](#testing).
+
+Failures are written to a `rejections` table with a typed reason, not logged. That table is
+the measurement of how much the extractor got wrong, and it is where the required
+extraction-failure case comes from.
+
+### 3. Deterministic rules first, model only for the residue
+
+Most reconciliations are mechanically decidable. Rules are free, so far more pairs can be
+compared than a model budget allows; reproducible, so the same corpus always yields the same
+relationships; and explainable in a way that matters — "these differ because one is stated
+in crore and the other in millions" names a checkable reason.
+
+```
+normalise both facts
+  -> different measure or entity                : not comparable, drop
+  -> non-numeric                                : escalate (language, not arithmetic)
+  -> unit classes differ                        : RECONCILED  dimension = currency | definition
+  -> period unresolved                          : escalate
+  -> one period contains the other              : REFINES     dimension = period
+  -> periods disjoint or partially overlapping  : RECONCILED  dimension = period
+  -> a discriminating qualifier differs         : RECONCILED  dimension = segment | scope
+  -> basis differs and values disagree          : RECONCILED  dimension = basis | vintage
+  -> values agree within tolerance              : CORROBORATES (notes scale or basis if they differ)
+  -> values disagree by >= 50%, or either fact
+     was extracted with confidence < 0.7        : escalate
+  -> otherwise                                  : CONTRADICTS + severity
+```
+
+A confident rule verdict is never second-guessed by a model call, because that would spend
+budget to make the system less predictable. The escalation cases are the ones where the
+answer genuinely depends on reading the evidence.
+
+The adjudicator receives both verbatim quotes plus roughly 400 characters of surrounding
+page text, both document contexts, and a note saying what the mechanical comparison already
+established. The surrounding text matters: the distinction that explains a difference is
+very often just outside what was extracted — a column header, a footnote, a bracketed
+"(revised)".
+
+### 4. The schema is data
+
+Nothing in the code enumerates what can be measured. A document introduces a phrase, and the
+registry either recognises it or admits it as a new canonical measure. Resolution escalates
+cheapest-first: exact alias, then embedding nearest-neighbour, then a batched model call
+only for the band in between (cosine 0.80 to 0.94, tuned against observed pairs — "revenue
+from services" against "service revenue" scores 0.95, against "operating expenses" 0.74).
+
+Two guards keep the registry from collapsing:
+
+- **Measures of different unit classes never merge.** "Revenue" is an amount and "revenue
+  growth" is a rate. A model asked in isolation will sometimes merge them, and the result is
+  a system reporting a contradiction between 8,142 and 13.
+- **When uncertain, create.** Two rows for one measure loses some links. One row for two
+  measures manufactures contradictions between numbers that were never the same number,
+  which is a much worse failure for this system to have.
 
 ## Core primitives
 
 ### Units (`app/core/units.py`)
 
 Every quantity reduces to `(magnitude in a class base unit, unit class, currency)`.
-Comparison only happens inside one class and one currency.
+Comparison happens only inside one class and one currency.
 
-Currency conversion is deliberately not performed. Exchange rates have their own vintage
-problem, and applying one would invent a number that appears in no document. Two facts in
-different currencies are reported as differing on the `currency` dimension instead.
+Classes: `currency`, `ratio` (percent), `ratio_change` (percentage points, basis points),
+`count`, `mass`, `distance`, `area`, `duration`, `energy`, `dimensionless`. An unrecognised
+unit gets its own class (`other:<noun>`) so it is only ever compared with an identically
+labelled unit, never silently coerced.
 
-Indian scales (lakh, crore) sit alongside international ones because this corpus mixes
-them freely — often on the same page.
+Indian scales (lakh, crore) sit alongside international ones because this corpus mixes them
+freely, often on the same page.
 
-Tolerance is not a flat percentage. `rounding_tolerance` widens the band to match the
-significant figures actually present, so "8,142 Cr" and "81,419.7 million" corroborate
-rather than registering a difference.
+**Tolerance is derived, not fixed.** The class floors exist to absorb floating-point noise
+(0.0005 to 0.001); what decides agreement is `rounding_tolerance`, which widens the band to
+match the significant figures each value was actually written at. A flat one-percent band
+would call 6.5% and 6.6% GDP growth the same figure, and they are two different published
+numbers.
+
+```
+8,142 Cr  vs 81,419.7 million   diff 3.7e-06   tol 5.0e-04   agree
+8,142 Cr  vs 8,200 Cr           diff 7.1e-03   tol 5.0e-04   differ
+6.5%      vs 6.6%               diff 1.5e-02   tol 7.6e-03   differ
+4.9%      vs 4.94%              diff 8.1e-03   tol 1.0e-02   agree   (rounded restatement)
+```
 
 ### Periods (`app/core/periods.py`)
 
@@ -53,34 +186,397 @@ their intervals are identical; otherwise the relationship between the intervals
 (containment, partial overlap, disjoint) is what the reconciler reports.
 
 Fiscal conventions are per document. Under the Indian convention `FY24`, `FY 2023-24`,
-`2023-24`, `2024/25` and `the year ended March 31, 2024` all resolve correctly, and
-`Q4 FY24` is recognised as contained by `FY24` rather than equal to it.
+`2023-24`, `2024/25` and `the year ended March 31, 2024` all resolve correctly, `Q4 FY24` is
+recognised as contained by `FY24` rather than equal to it, and `2021-22 to 2024-25` spans
+both ends instead of silently becoming its first sub-period.
 
 ### Text (`app/core/text.py`)
 
 Normalises ligatures, soft hyphens, line-break hyphenation, non-breaking spaces and curly
 punctuation while carrying an index map back to the original offsets. Matching happens in
-normalised space; results are translated back so a fact can still point at exact
-characters in the source page.
+normalised space; results translate back, so a fact still points at exact characters in the
+source page.
+
+Location tries an exact normalised substring first, then a windowed edit-distance search
+that steps by a quarter of the needle length and refines around the winner. The fallback
+exists for quotes the model altered slightly; a quote whose *number* was changed still
+locates the right sentence, and is then caught by the value check rather than the quote
+check.
 
 ## Data model
 
-See `backend/app/db/models.py`. Notes on the shape:
+See `backend/app/db/models.py`.
 
-- Facts store both the surface form (what the document said) and the normalised form (what
-  it means). Dropping either one breaks something — the surface is what makes evidence
-  verifiable, the normal form is what makes comparison possible.
-- `measures`, `entities` and `qualifier_keys` are registries. New kinds of facts create
-  rows, not migrations.
-- `rejections` is a table, not a log. A discarded candidate fact is the most useful signal
-  the pipeline can give about its own reliability.
-- `llm_calls` records every model call so cost and cache-hit rates are measured rather
-  than asserted.
+| Table | Purpose |
+| --- | --- |
+| `documents` | sha256, profiled title/publisher/type, as-of date, default currency and scale, fiscal convention, status |
+| `pages` | page number, printed label, page type, raw text, content hash, layout rendition, per-page unit declaration |
+| `facts` | the normalised claim tuple, provenance, evidence span and boxes, confidence, raw model output |
+| `entities` | canonical subject, aliases, embedding |
+| `measures` | canonical measure, unit class, aliases, first-seen document, fact and document counts |
+| `qualifier_keys` | discovered qualifier dimensions and their observed values |
+| `fact_embeddings` | float32 vectors, one contiguous matrix at query time |
+| `relations` | pair, type, subtype, dimension, decided_by, rule id, deltas, severity, explanation |
+| `rejections` | typed grounding and extraction failures |
+| `jobs` | per-document ingest job, stage, progress, statistics |
+| `llm_calls` | model, purpose, prompt hash, tokens, latency, cache hit |
+| `facts_fts` | FTS5 over statement, subject, predicate, quote and period label |
+
+Relation types: `corroborates`, `contradicts`, `reconciled_by_context`, `refines`,
+`supersedes`. Dimensions: `period`, `unit_scale`, `currency`, `scope`, `segment`, `basis`,
+`vintage`, `entity`, `definition`.
+
+Vocabulary is stored as strings rather than SQL enums: the relation vocabulary is expected
+to grow, and an enum change in SQLite means a table rewrite for what is really a new label.
 
 ## Pipeline
 
-_Documented as each stage lands._
+`app/pipeline/orchestrator.py` runs nine stages and reports progress into the job row.
+
+```mermaid
+flowchart TD
+    PDF[PDF upload] --> Parse[1 Parse<br/>text, word boxes, tables, geometry]
+    Parse --> Classify[2 Classify page<br/>prose / table / chart / contents]
+    Classify -->|contents, divider, empty| Skip[skipped, still indexed for search]
+    Classify --> Layout[3 Layout<br/>columns, or panels and alignment groups]
+    Layout --> Profile[4 Profile document<br/>publisher, fiscal convention, currency and scale]
+    Profile --> Extract[5 Extract<br/>batched by size; chart pages sent alone with an image]
+    Extract --> Ground[6 Ground<br/>locate quote, confirm value is on the page, map to boxes]
+    Ground -->|fails| Reject[(rejections<br/>typed reason)]
+    Ground --> Norm[7 Normalise<br/>units, scales, currency, periods, basis]
+    Norm --> Registry[8 Register<br/>measures, entities, qualifier keys]
+    Registry --> Candidates[9a Candidates<br/>measure, vector, lexical - new facts only]
+    Candidates --> Rules{9b Rules<br/>period? scale? scope? basis?}
+    Rules -->|decided| Relations[(relations<br/>with the rule that decided)]
+    Rules -->|cannot decide| Model[9c Model adjudication<br/>both quotes plus surrounding page text]
+    Model --> Relations
+```
+
+The two outputs that matter are `relations` and `rejections`. The first is what the system
+found; the second is what it refused to assert, and is the honest measure of the first.
+
+**1. Parse** (`parse.py`) — PyMuPDF per page: raw text stored verbatim, words with bounding
+boxes, tables, image coverage, vector drawing count, ruled-line count, printed page label,
+and any per-page unit declaration found by regex.
+
+**2. Classify** (`classify.py`) — routes each page to the right layout treatment and decides
+whether it is worth a model call at all. All signals are structural: text density, numeric
+token share, sentence-terminator density, table coverage, image area, vector density, and a
+dot-leader score for contents pages. Nothing keys off a filename, a publisher, or a phrase
+that only appears in this corpus.
+
+Types: `prose`, `table`, `chart_slide`, `mixed`, `toc`, `boilerplate`, `empty`. The last
+three are skipped for extraction and still indexed for search.
+
+**3. Layout** (`layout.py`) — the part with the most work in it, because the PDF text layer
+discards the spatial relationships that make a page readable.
+
+*Prose and tables.* Columns are found by an occupancy histogram over x, looking for a
+vertical corridor that is far emptier than the text either side. The floor is a fraction of
+the page's own typical column density rather than an absolute number, because a gutter is
+rarely empty — a centred box heading or a full-width footnote crosses it. Lines that
+genuinely span the measure are detected by continuity (no gutter-sized gap inside them) and
+emitted separately, so a running head is not cut into "ANNUAL" and "REPORT 2024-25".
+
+*Chart slides.* Proximity clustering does not work: a bar's value sits at the top of the
+plot area and its axis label at the bottom, often 300 points away, so any threshold loose
+enough to join them also merges the chart with its neighbours. Instead the page is split
+into vertical panels (with header and footer bands excluded from corridor detection, since
+full-width footnotes weld every panel together), and items sharing a horizontal position are
+grouped and read downwards — which is the relationship the chart was drawn with.
+
+Two views are emitted because neither is sufficient alone. Reading order keeps titles and
+footnotes intact; alignment groups recover which number belongs to which bar. Page 9 of the
+Delhivery deck goes from
+
+```
+59% 63% 62% 24% 16% 19% ... 7,054 7,224 8,142 FY22 FY23 FY24 Express Parcel PTL ...
+```
+
+to, among others,
+
+```
+[x 238-328] 8,142 (y=139) | 10% (y=170) | 7% (y=194) | 19% (y=232) | 62% (y=348) | FY24 (y=452)
+```
+
+**4. Profile** (`extract.py`) — one call over the front matter plus any page carrying a unit
+declaration, establishing publisher, document type, as-of date, reporting basis, fiscal
+convention and default currency and scale. The declaration matters most: it is what makes
+₹ million and ₹ crore reconcilable. Declarations observed in the page text override the
+model's reading, since they were seen rather than inferred. A failed profile call is logged
+and the ingest continues degraded rather than aborting.
+
+**5. Extract** (`extract.py`) — pages are batched by character budget (9,000) rather than by
+count, so requests stay uniform whatever the document's density. Chart pages are always sent
+alone, with a rendered PNG when a vision model is configured, because mixing other pages
+into that request invites the model to confuse them.
+
+**6. Ground** (`ground.py`) — as described above. Rejection reasons: `quote_not_found`,
+`value_absent_from_quote`, `ambiguous_short_quote`, `quote_too_short`, `subject_unresolved`,
+`predicate_unresolved`, `missing_required_fields`, `low_confidence`,
+`duplicate_of_existing_fact`, `unattributed_by_model`, `extraction_call_failed`.
+
+Two rules here were rewritten after the first run against a real model, and both are worth
+stating because both were wrong in an instructive way.
+
+*Short quotes are tested for uniqueness, not length.* The first version required at least two
+tokens. That rejected 51 correct facts from one metrics slide, where the evidence genuinely is
+a lone number in a table cell because the label sits in a different column and no contiguous
+run of page text contains both. Length was a proxy for what actually matters — whether the
+quote pins the value to one place — so the rule became a uniqueness test. A short quote is
+accepted when it occurs exactly once on the page and rejected as `ambiguous_short_quote` when
+it does not, which admits "18,540" beside a "Pin-code reach" label and still refuses a bare
+"94" that appears five times.
+
+*Composite quotes fall back to the fragment carrying the value.* The layout renditions mark
+spatially separate items with a middle dot so a model can see they are distinct, and a model
+will occasionally quote a whole row as evidence for one cell. That string exists on screen but
+not on the page. When a quote fails to locate, it is split on the rendition separators and the
+fragments are tried — preferring the one containing the value. Preferring the longest, which
+was the first implementation, lands on a neighbouring cell and rejects a fact whose value is
+genuinely present.
+
+Together these took grounding from 45% to 93% of proposed facts on the earnings deck.
+
+**7. Normalise** (`normalize.py`) — units, scales, currencies, periods, qualifiers and
+basis. Unit resolution follows specificity: a unit beside the number beats a page
+declaration, which beats a document default.
+
+Inheritance of the declared currency and scale is deliberately asymmetric. A declaration
+like "all amounts in Indian Rupees in million" is a statement about *amounts*. The currency
+is inherited only where nothing else established one, so it is never pushed onto a
+percentage or a shipment count. The scale is inherited by any monetary figure that did not
+carry its own — including one whose currency the extractor did report, which is the common
+case for a bare figure under a "(₹ in million)" heading.
+
+Categorical facts are never scanned for digits. "Plot 5, Sector 44, Gurugram" contains
+numbers, and reading them turns an address into a quantity that then gets compared
+arithmetically against other quantities.
+
+**8. Register** (`canonicalize.py`) — measures, entities and qualifier keys, as described
+above. Entity resolution additionally strips legal-form suffixes, so "Delhivery Limited" and
+"Delhivery Ltd" resolve without a model call.
+
+**9. Link** (`candidates.py`, `reconcile.py`, `adjudicate.py`) — candidate pairs come from
+three routes unioned: shared canonical measure, vector neighbourhood (cosine ≥ 0.82, top 12),
+and FTS lexical overlap. Pairs on the same page of the same document are dropped — two
+figures printed side by side are usually one statement read twice — and per-fact fan-out is
+capped at 40 so one popular measure cannot dominate an ingest.
+
+Only new facts are paired against the corpus, which is what makes ingest incremental.
+
+## Prompt design
+
+`app/llm/prompts.py`. Two rules shape all of them.
+
+**The model is a reader, not a source.** It may report what a page says and nothing else: no
+arithmetic, no filling in a unit from world knowledge, no completing a half-remembered
+figure. The prompts state that output will be verified, because a model told its citations
+will be checked is measurably more conservative about inventing them. Values it cannot
+attribute go into an `unattributed` list, which the pipeline turns into rejections — an
+honest "I could not tell" is a correct answer, and recording it stops a page looking as
+though it held nothing.
+
+**Nothing names a company, publisher, measure or document type.** The prompts describe kinds
+of things to look for, so the same instructions work on a filing, a central bank review or a
+deck the system has never seen. Page-type-specific guidance (how to read alignment groups on
+a slide, how a column header changes the period and basis beneath it) is appended per page
+from the classifier's verdict.
+
+Schemas are enforced by the provider where it supports constrained decoding. Gemini rejects
+several standard JSON Schema keywords, so schemas are rewritten into its dialect at the
+provider boundary rather than being written twice.
+
+### Model selection
+
+Two properties of the Gemini models decided the configuration, and both were measured rather
+than read off the documentation.
+
+**Reasoning is drawn from the output budget.** The 2.5 and 3.x models think before answering,
+and those tokens come out of the same allowance as the response. Left on the default, most
+pages returned JSON cut off mid-object. Extraction is a reading task and runs with the thinking
+budget set to zero; adjudication is a reasoning task and keeps one. Facts proposed on one
+document went from 35 to 117.
+
+A truncated response is still salvaged rather than discarded: it is a long list whose last
+item is incomplete, and the earlier ones must pass grounding anyway, so keeping them costs no
+accuracy. `salvage_truncated_json` walks the text tracking bracket and string state, rewinds to
+the last cleanly closed element and closes what remains open.
+
+**Free-tier limits differ by model and from the published figures.** A burst probe against each
+candidate gave:
+
+| Model | Result | Measure quality |
+| --- | --- | --- |
+| `gemini-2.5-flash` | 5 requests/minute, 20/day | good |
+| `gemini-3-flash-preview` | 5 requests/minute | `revenue from services` |
+| `gemini-3.1-flash-lite` | no limit reached at 10 | shortens to `revenue` |
+
+Twenty requests a day cannot process a 500-page corpus, so extraction runs at volume on
+flash-lite and adjudication — a small fraction of the calls — keeps the stronger model. The
+shortening problem was addressed in the prompt and given a deterministic backstop in
+normalisation, since a measure name that silently absorbs or drops a qualifier fragments the
+registry.
+
+## Performance
+
+The assignment asks for large PDFs without significant performance issues. Four things were
+measured on the 511-page starter corpus.
+
+| Change | Effect |
+| --- | --- |
+| Gate table detection behind cheap signals | `find_tables` costs ~450 ms/page, about fifty times everything else combined. It now runs only on pages with ruled lines or a high numeric-token share. |
+| Drop unused block extraction | `get_text("dict")` cost 28 ms/page for font metadata nothing consumed. |
+| Parse pages across processes | Pages are independent and the work is native. |
+| Skip non-content pages | Contents, dividers and empty pages never reach a model call. |
+
+```
+before                      263 s
+after gating + cleanup      154 s
+after parallel parsing       38 s   (8 workers, 511 pages, ~75 ms/page)
+```
+
+Other measures: responses are content-addressed on disk so a re-ingest is nearly free and
+deterministic; embeddings run locally so candidate generation costs nothing; vector search
+is a single vectorised dot product with `argpartition` for top-k; SQLite runs in WAL mode
+with targeted indices; and facts are committed per page so progress is visible to readers as
+the run proceeds.
+
+That last point started as a bug fix. Holding one write transaction across the whole
+grounding stage deadlocked against the progress reporter's own commit, because SQLite
+permits a single writer. Adjudication had the same problem and now gathers its context, then
+releases the session before the model calls.
+
+### The registry was the real bottleneck
+
+The first full run over a hundred-page filing spent twenty minutes in the registry stage and
+produced nothing. Three separate causes, all of the same shape — work repeated per fact that
+belongs per distinct value:
+
+- `EntityRegistry.resolve` was called once per fact rather than once per distinct subject. A
+  filing states hundreds of facts about one company, and each one ran its own embedding
+  inference to answer the same question.
+- Both registries rebuilt their comparison matrix on every lookup instead of appending to a
+  kept one.
+- ONNX Runtime defaulted to a conservative thread count, so the model ran close to
+  single-threaded at roughly six embeddings a second on a sixteen-core machine.
+
+After batching the inferences, resolving entities per distinct subject, keeping the matrix
+incrementally and setting the thread count, the earnings deck went from 224s to 100s and the
+test suite from 37s to 19s.
+
+### Rate limiting is per model
+
+Quotas are enforced per model, and the two this pipeline uses differ by a factor of three.
+A single client-wide budget either throttles extraction down to the adjudication model's
+limit or drives adjudication into a rejection on every call — which then costs a full
+quota-window backoff each time. Each model gets its own limiter.
 
 ## API
 
-_Documented as each endpoint lands._
+```
+POST   /api/documents                            upload, returns a job
+POST   /api/documents/{id}/reprocess             re-run the pipeline over a stored document
+GET    /api/documents                            list with fact, relation and rejection counts
+GET    /api/documents/{id}                       detail including per-page classification
+DELETE /api/documents/{id}                       cascades facts and relations touching them
+GET    /api/documents/{id}/file                  the stored PDF
+GET    /api/documents/{id}/pages/{n}/image       rendered page for the evidence viewer
+GET    /api/documents/{id}/pages/{n}/text        raw text and layout rendition
+
+GET    /api/facts                                filter by document, measure, entity, kind,
+                                                 unit class, currency, basis, period overlap,
+                                                 confidence, whether linked; full-text search
+GET    /api/facts/{id}                           fact, evidence, and every relation it is in
+
+GET    /api/relations                            filter by type, dimension, decided_by,
+                                                 document, severity, cross-document
+GET    /api/relations/{id}
+
+GET    /api/measures                             the registry
+GET    /api/entities
+GET    /api/qualifiers
+
+GET    /api/cases                                the four required cases, derived
+GET    /api/evaluation                           metrics computed from the last run
+GET    /api/evaluation/rejections                the rejection ledger
+
+GET    /api/jobs, /api/jobs/{id}
+GET    /api/jobs/{id}/stream                     server-sent progress events
+GET    /api/health                               readiness, provider, throttle warnings
+```
+
+Progress streaming polls the job row rather than using a message broker. There is a single
+writer and a handful of readers, and WAL mode lets the stream read while the ingest
+transaction is open. The client falls back to polling if `EventSource` is unavailable or a
+proxy buffers the stream.
+
+Full-text search falls back to `LIKE` when the query is not valid FTS5 syntax, because
+reviewers type quotation marks and hyphens into search boxes and FTS5 treats several of those
+as operators.
+
+## Interface
+
+A review workbench: dense tables, verbatim quotes, side-by-side comparisons. Borders rather
+than shadows, one restrained accent, 13px base, tabular numerals. Optimised for reading a lot
+of text and numbers accurately.
+
+Six views: **Documents** (upload, streaming progress, per-document counts), **Facts**
+(filterable table with an evidence panel), **Relations** (both facts side by side with the
+differing fields marked), **Cases** (the four required cases), **Registry** (measures,
+entities, qualifier keys), **Evaluation** (metrics from the last run).
+
+**Page rendering is server-side.** pdf.js was the obvious choice and was dropped. Rendering
+with PyMuPDF costs a round trip and buys three things: the highlight rectangles are in the
+same coordinate space as the image by construction rather than by a transform that has to be
+kept correct; a hundred-megabyte filing is never shipped to the browser to show one page; and
+the viewer works identically for any PDF PyMuPDF can open. Rectangles are positioned as
+percentages of the page box, so they stay aligned at any rendered width.
+
+## Testing
+
+127 tests, about 50 seconds.
+
+**Unit tests** cover period parsing under both fiscal conventions, unit and scale conversion,
+tolerance behaviour, fuzzy quote matching against hyphenated and ligatured text, grounding
+rejections, normalisation precedence, and the full reconciliation rule table.
+
+**End-to-end tests** run the real pipeline — parsing, layout, classification, grounding,
+normalisation, the registry, candidate generation and the rule engine — against a stub model.
+Only the model is stubbed, which is what makes exact assertions possible; a real model would
+make the expected fact count a moving target.
+
+Test PDFs are generated with PyMuPDF inside the test rather than committed as fixtures, so
+the text a quote must match is visible beside the assertion about it. The stub's canned
+responses deliberately include a fabricated quote, a real quote carrying an unrelated number,
+a vague subject, and a value the extractor declined to attribute, so the rejection paths are
+exercised rather than assumed.
+
+Those tests found four defects that would all have failed on the first live run:
+
+1. **The value check searched the model's own quote as well as the page**, so an invented
+   figure validated against itself. This was the single most important guard in the system
+   and it was decorative. It now reads only the source text.
+2. **A page-declared scale was skipped whenever the extractor also reported a currency**,
+   leaving those figures a million times too small — and that is the common case for the
+   Delhivery annual report, the exact document the headline reconciliation depends on.
+3. **Categorical values were scanned for digits**, so an address became a quantity of 220
+   somethings and entered numeric comparison.
+4. **The lexical candidate route did not apply the same-page filter** the other two routes
+   did. The rule now lives in one place.
+
+Plus the SQLite writer deadlock described under [Performance](#performance).
+
+## Configuration
+
+All configuration is environment variables; see `.env.example`. Nothing is required to browse
+a restored snapshot — only to process new PDFs.
+
+Concurrency and request rate default to values inside the Gemini free tier (3 in flight, 10
+requests per minute). Raising them is allowed and not blocked, but the settings are checked
+against the documented free-tier ceilings at startup, at ingest, and on the Documents page,
+because a run spending its time absorbing 429s looks exactly like a slow model.
+
+`LLM_PROVIDER=replay` serves recorded responses from `backend/seed/replay/` and refuses to
+call a model. A request with no recording fails loudly rather than being invented, so a
+replay run cannot quietly diverge from the run it reproduces.
