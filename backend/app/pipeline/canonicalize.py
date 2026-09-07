@@ -234,16 +234,15 @@ class MeasureRegistry:
         if client is None:
             # Without a model the conservative choice is to create, for the reason given at
             # the top of this module: a wrong merge is worse than a missed one.
-            return {
-                item.surface: self._create(item.surface, item.unit_class, item.example)
-                for item in candidates
-            }
+            return self._create_all([(item, item.surface) for item in candidates])
 
         resolved: dict[str, Measure] = {}
         for start in range(0, len(candidates), LLM_BATCH_SIZE):
             batch = candidates[start : start + LLM_BATCH_SIZE]
             self.report.escalated_to_model += len(batch)
             decisions = await self._ask(batch, client)
+
+            pending: list[tuple[_Candidate, str]] = []
             for item in batch:
                 decision = decisions.get(alias_key(item.surface))
                 target = None
@@ -261,10 +260,33 @@ class MeasureRegistry:
                     name = item.surface
                     if decision and decision.get("action") == "create":
                         name = str(decision.get("measure") or item.surface)
-                    resolved[item.surface] = self._create(
-                        item.surface, item.unit_class, item.example, canonical_name=name
-                    )
+                    pending.append((item, name))
+
+            resolved.update(self._create_all(pending))
         return resolved
+
+    def _create_all(self, pending: list[tuple[_Candidate, str]]) -> dict[str, Measure]:
+        """Create several measures, embedding their names in one pass.
+
+        The model often answers with a canonical name that differs from the surface, and
+        creating one at a time meant an inference per measure. On a document that escalates
+        a few hundred candidates that was the slowest thing in the pipeline.
+        """
+        if not pending:
+            return {}
+        names = [name.strip().lower() for _, name in pending]
+        vectors = embed.embed_texts(names)
+        return {
+            item.surface: self._create(
+                item.surface,
+                item.unit_class,
+                item.example,
+                canonical_name=name,
+                vector=vector,
+                vector_is_for_name=True,
+            )
+            for (item, name), vector in zip(pending, vectors, strict=False)
+        }
 
     async def _ask(self, batch: list[_Candidate], client: LlmClient) -> dict[str, dict[str, Any]]:
         existing = [
@@ -307,11 +329,12 @@ class MeasureRegistry:
         *,
         canonical_name: str | None = None,
         vector: np.ndarray | None = None,
+        vector_is_for_name: bool = False,
     ) -> Measure:
         name = (canonical_name or surface).strip().lower()
-        # The surface's vector is reused where the canonical name is the surface, which is
-        # the common case; a model-supplied name is different text and needs its own.
-        if vector is None or name != surface.strip().lower():
+        # A caller that already embedded the canonical name says so; otherwise the vector it
+        # supplied is for the surface, and is only reusable when the two are the same text.
+        if vector is None or not (vector_is_for_name or name == surface.strip().lower()):
             vector = embed.embed_text(name)
 
         measure = Measure(
