@@ -90,11 +90,28 @@ export default function Documents() {
     Array.from(files).forEach((file) => upload.mutate(file));
   };
 
+  const { data: health } = useQuery({ queryKey: ["health"], queryFn: api.health });
+
   const documents = data?.documents ?? [];
   const running = Object.values(active);
 
   return (
     <div className="page">
+      {health?.throttle_warnings.length ? (
+        <div className="warning-note">
+          <strong>Rate limit warning</strong>
+          <ul>
+            {health.throttle_warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+          <p className="meta">
+            Ingest will still run — requests that are rejected are retried with backoff.
+            Lower <code>LLM_RATE_LIMIT_RPM</code> and <code>LLM_CONCURRENCY</code> in{" "}
+            <code>backend/.env</code> to avoid it.
+          </p>
+        </div>
+      ) : null}
       <p className="page__intro">
         Upload a PDF and it is parsed, read page by page, and compared against everything
         already here. Nothing is specific to the sample corpus — the conventions each

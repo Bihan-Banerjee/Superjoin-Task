@@ -25,6 +25,34 @@
   margin-top: 0;
 }
 
+.warning-note {
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--reconcile-border);
+  border-radius: var(--radius);
+  background: var(--reconcile-soft);
+  color: var(--text);
+}
+
+.warning-note strong {
+  color: var(--reconcile);
+}
+
+.warning-note ul {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-4);
+}
+
+.warning-note p {
+  margin: 0;
+}
+
+.warning-note code {
+  padding: 0 3px;
+  border-radius: 2px;
+  background: var(--surface-inset);
+}
+
 /* --- Upload ------------------------------------------------------------------------- */
 
 .dropzone {

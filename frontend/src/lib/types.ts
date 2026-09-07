@@ -203,6 +203,9 @@ export interface Health {
   vision_enabled: boolean;
   embedding_model: string;
   cache_enabled: boolean;
+  concurrency: number;
+  rate_limit_rpm: number;
+  throttle_warnings: string[];
 }
 
 export interface Evaluation {

@@ -10,6 +10,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_ROOT.parent
 
+# Gemini free-tier ceilings, measured rather than quoted, because the published figures and
+# the enforced ones disagreed: gemini-2.5-flash rejected above 5 requests a minute and capped
+# the day at 20, while gemini-3.1-flash-lite sustained far more. These are the values a
+# flash-lite extraction model tolerates, and they only ever produce a warning.
+FREE_TIER_RPM = 15
+FREE_TIER_CONCURRENCY = 3
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -23,9 +30,12 @@ class Settings(BaseSettings):
     llm_fallback_provider: str = ""
 
     gemini_api_key: str = ""
-    gemini_extraction_model: str = "gemini-2.5-flash"
-    gemini_adjudication_model: str = "gemini-2.5-flash"
-    gemini_vision_model: str = "gemini-2.5-flash"
+    gemini_extraction_model: str = "gemini-3.1-flash-lite"
+    gemini_adjudication_model: str = "gemini-3-flash-preview"
+    gemini_vision_model: str = "gemini-3.1-flash-lite"
+    # Output tokens the 2.5 models may spend reasoning before answering. Zero for reading
+    # tasks; adjudication is genuinely a reasoning task and gets an allowance.
+    gemini_thinking_budget: int = Field(default=1024, ge=0, le=24576)
 
     openrouter_api_key: str = ""
     openrouter_extraction_model: str = "google/gemini-2.5-flash"
@@ -36,8 +46,10 @@ class Settings(BaseSettings):
     ollama_extraction_model: str = "qwen2.5:14b-instruct"
     ollama_adjudication_model: str = "qwen2.5:14b-instruct"
 
-    llm_concurrency: int = Field(default=6, ge=1, le=64)
-    llm_rate_limit_rpm: int = Field(default=60, ge=0)
+    llm_concurrency: int = Field(default=3, ge=1, le=64)
+    llm_rate_limit_rpm: int = Field(default=15, ge=0)
+    # Adjudication runs on a stronger model with a tighter quota, so it gets its own budget.
+    llm_adjudication_rate_limit_rpm: int = Field(default=4, ge=0)
     llm_cache_enabled: bool = True
     llm_max_calls_per_job: int = Field(default=0, ge=0)
     llm_timeout_seconds: float = Field(default=180.0, gt=0)
@@ -49,6 +61,8 @@ class Settings(BaseSettings):
     vision_render_dpi: int = Field(default=140, ge=72, le=400)
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
+    # ONNX threads for the embedding model. 0 chooses from the machine.
+    embedding_threads: int = Field(default=0, ge=0, le=64)
 
     data_dir: Path = Path("./data")
     database_url: str = ""
@@ -88,6 +102,40 @@ class Settings(BaseSettings):
         if self.database_url:
             return self.database_url
         return f"sqlite+pysqlite:///{(self.data_dir / 'knowledge.sqlite').as_posix()}"
+
+    def throttle_warnings(self) -> list[str]:
+        """Configuration that will probably be rate limited, and why.
+
+        The defaults are safe, but the point of exposing these knobs is that someone with a
+        paid key should be able to raise them. Blocking that would be wrong, and letting it
+        fail silently would be worse — a run that spends twenty minutes absorbing 429s looks
+        identical to a slow model. So over-limit settings are allowed and announced.
+
+        The thresholds below are the documented Gemini free-tier ceilings at the time of
+        writing. They move, so this warns rather than enforces.
+        """
+        if self.llm_provider.strip().lower() != "gemini":
+            return []
+
+        warnings: list[str] = []
+        if self.llm_rate_limit_rpm == 0:
+            warnings.append(
+                "LLM_RATE_LIMIT_RPM is 0, which disables throttling entirely. On a free "
+                f"Gemini key this will be rate limited almost immediately; "
+                f"{FREE_TIER_RPM} is the safe value."
+            )
+        elif self.llm_rate_limit_rpm > FREE_TIER_RPM:
+            warnings.append(
+                f"LLM_RATE_LIMIT_RPM is {self.llm_rate_limit_rpm}, above the free Gemini "
+                f"tier of roughly {FREE_TIER_RPM} requests per minute. Expect 429s. They "
+                "are retried with backoff, so the run will finish, but slowly."
+            )
+        if self.llm_concurrency > FREE_TIER_CONCURRENCY:
+            warnings.append(
+                f"LLM_CONCURRENCY is {self.llm_concurrency}. Above {FREE_TIER_CONCURRENCY} "
+                "in-flight requests a free key tends to reject rather than queue."
+            )
+        return warnings
 
     @property
     def resolved_parse_workers(self) -> int:

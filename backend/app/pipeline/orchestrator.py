@@ -31,9 +31,11 @@ from app.config import Settings, get_settings
 from app.core.hashing import sha256_text
 from app.db.engine import session_scope
 from app.db.models import (
+    DIM_PERIOD,
     DOC_STATUS_FAILED,
     DOC_STATUS_PROCESSING,
     DOC_STATUS_READY,
+    REL_RECONCILED,
     Document,
     Fact,
     Job,
@@ -46,7 +48,11 @@ from app.db.models import (
 from app.llm.client import LlmClient
 from app.pipeline import candidates as candidate_stage
 from app.pipeline import extract as extract_stage
-from app.pipeline.adjudicate import AdjudicationRequest, adjudicate_all
+from app.pipeline.adjudicate import (
+    AdjudicationRequest,
+    adjudicate_all,
+    load_adjudication_context,
+)
 from app.pipeline.canonicalize import (
     EntityRegistry,
     MeasureRegistry,
@@ -150,12 +156,24 @@ def _stage_order(name: str) -> int:
 
 
 async def ingest_document(
-    document_id: int, job_id: int, settings: Settings | None = None
+    document_id: int,
+    job_id: int,
+    settings: Settings | None = None,
+    client: LlmClient | None = None,
 ) -> IngestStats:
+    """Run the pipeline over one document.
+
+    `client` is injectable so a caller can reuse one across a batch, and so the integration
+    tests can drive the real pipeline against a stub model rather than the network.
+    """
     settings = settings or get_settings()
+    for warning in settings.throttle_warnings():
+        logger.warning("throttle: %s", warning)
+
     reporter = ProgressReporter(job_id)
     stats = IngestStats()
-    client = LlmClient(settings)
+    owns_client = client is None
+    client = client or LlmClient(settings)
 
     try:
         stats = await _run(document_id, job_id, settings, reporter, client, stats)
@@ -164,7 +182,8 @@ async def ingest_document(
         _mark_failed(document_id, job_id, str(error))
         raise
     finally:
-        await client.aclose()
+        if owns_client:
+            await client.aclose()
 
     return stats
 
@@ -320,24 +339,27 @@ def _persist_facts(
     with session_scope() as session:
         session.execute(delete(Fact).where(Fact.document_id == document_id))
         session.execute(delete(Rejection).where(Rejection.document_id == document_id))
-        session.flush()
-
         page_rows = {
-            row.page_number: row
+            row.page_number: row.id
             for row in session.scalars(select(Page).where(Page.document_id == document_id))
         }
 
-        for index, (page_number, result) in enumerate(sorted(results.items())):
-            page_row = page_rows.get(page_number)
-            parsed_page = pages_by_number.get(page_number)
-            if page_row is None or parsed_page is None:
-                continue
+    # One transaction per page rather than one for the document. SQLite permits a single
+    # writer, and the progress reporter is a writer too, so holding a transaction open
+    # across the whole loop deadlocks against the reporter's own commit. Committing per page
+    # also means progress is visible to readers as the ingest runs rather than all at once.
+    for index, (page_number, result) in enumerate(sorted(results.items())):
+        page_id = page_rows.get(page_number)
+        parsed_page = pages_by_number.get(page_number)
+        if page_id is None or parsed_page is None:
+            continue
 
+        with session_scope() as session:
             if not result.ok:
                 session.add(
                     Rejection(
                         document_id=document_id,
-                        page_id=page_row.id,
+                        page_id=page_id,
                         page_number=page_number,
                         stage="extraction",
                         reason="extraction_call_failed",
@@ -355,7 +377,7 @@ def _persist_facts(
                 session.add(
                     Rejection(
                         document_id=document_id,
-                        page_id=page_row.id,
+                        page_id=page_id,
                         page_number=page_number,
                         stage="grounding",
                         reason=rejection.reason,
@@ -374,7 +396,7 @@ def _persist_facts(
                 )
                 fact = Fact(
                     document_id=document_id,
-                    page_id=page_row.id,
+                    page_id=page_id,
                     kind=normalised.kind,
                     statement=normalised.statement,
                     subject_surface=normalised.subject,
@@ -420,8 +442,8 @@ def _persist_facts(
                 stats.facts_kept += 1
                 record_qualifier_keys(session, normalised.qualifiers, document_id)
 
-            if index % 10 == 0:
-                reporter.within("grounding", index + 1, len(results))
+        if index % 10 == 0:
+            reporter.within("grounding", index + 1, len(results))
 
     return new_ids
 
@@ -444,6 +466,10 @@ async def _register(
                 surfaces[key] = (key, fact.unit_class, fact.statement)
 
         resolved = await measures.resolve_batch(list(surfaces.values()), client)
+        # Resolved by distinct subject, not per fact: a filing states hundreds of facts about
+        # one company, and asking the same question once is the difference between this
+        # stage taking seconds and taking longer than the extraction it follows.
+        entity_by_surface = entities.resolve_many([fact.subject_surface for fact in facts])
 
         for fact in facts:
             measure = resolved.get(fact.predicate_surface)
@@ -456,7 +482,7 @@ async def _register(
                     measure.unit_class = fact.unit_class
                 session.add(measure)
 
-            entity = entities.resolve(fact.subject_surface)
+            entity = entity_by_surface.get(fact.subject_surface.strip())
             if entity is not None:
                 fact.entity_id = entity.id
                 entity.fact_count = (entity.fact_count or 0) + 1
@@ -530,20 +556,26 @@ async def _link(
                         delta_relative=verdict.delta_relative,
                     )
                 )
-            elif verdict.relation_type:
+            elif verdict.relation_type and _is_informative(verdict, left, right):
                 settled.append((left.id, right.id, verdict, pair.similarity))
 
     verdicts: dict[tuple[int, int], Verdict] = {}
     if escalations:
+        # Evidence and document context are gathered first and the session released, so the
+        # long stretch of model calls holds no database transaction. Without that, progress
+        # reporting during adjudication contends with the read transaction for the writer
+        # lock, and a corpus large enough to escalate anything deadlocks.
         with session_scope() as session:
-            verdicts = await adjudicate_all(
-                session,
-                client,
-                escalations,
-                on_progress=lambda done, total: reporter.within(
-                    "linking", done, total, f"adjudicated {done} of {total} ambiguous pairs"
-                ),
-            )
+            context = load_adjudication_context(session, escalations)
+
+        verdicts = await adjudicate_all(
+            client,
+            escalations,
+            context,
+            on_progress=lambda done, total: reporter.within(
+                "linking", done, total, f"adjudicated {done} of {total} ambiguous pairs"
+            ),
+        )
         stats.adjudicated = len(verdicts)
 
     with session_scope() as session:
@@ -551,6 +583,24 @@ async def _link(
             _store_relation(session, left_id, right_id, verdict, similarity, stats)
         for (left_id, right_id), verdict in verdicts.items():
             _store_relation(session, left_id, right_id, verdict, 0.0, stats)
+
+
+def _is_informative(verdict: Verdict, left: Fact, right: Fact) -> bool:
+    """Whether a relation says anything a reader could not already see.
+
+    One case is filtered: two facts in the *same* document that differ only in period. A
+    table listing FY22, FY23 and FY24 produces those by construction — three pairs per
+    measure that report nothing except the shape of the table. On the earnings deck they
+    were 195 of 271 relations and buried everything worth looking at.
+
+    Across documents the same comparison is informative, because two publishers choosing
+    different periods for the same measure is exactly the sort of thing this system exists
+    to surface. Containment within one document is kept too: a quarter inside a year is a
+    real relationship between two differently-scoped figures.
+    """
+    if left.document_id != right.document_id:
+        return True
+    return not (verdict.relation_type == REL_RECONCILED and verdict.dimension == DIM_PERIOD)
 
 
 def _store_relation(

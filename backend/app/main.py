@@ -35,6 +35,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging(settings.log_level)
     settings.ensure_directories()
     init_database()
+    for warning in settings.throttle_warnings():
+        logger.warning(warning)
     logger.info("knowledge layer ready at %s", settings.sqlalchemy_url)
     yield
 
@@ -97,4 +99,7 @@ def health() -> dict[str, Any]:
         "vision_enabled": settings.enable_vision,
         "embedding_model": settings.embedding_model,
         "cache_enabled": settings.llm_cache_enabled,
+        "concurrency": settings.llm_concurrency,
+        "rate_limit_rpm": settings.llm_rate_limit_rpm,
+        "throttle_warnings": settings.throttle_warnings(),
     }
