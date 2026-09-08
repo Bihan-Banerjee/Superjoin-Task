@@ -118,3 +118,20 @@ def test_bare_scale_is_distinguished_from_a_real_unit():
 def test_relative_difference_is_symmetric_and_safe_at_zero():
     assert relative_difference(100, 110) == relative_difference(110, 100)
     assert relative_difference(0, 0) == 0.0
+
+
+def test_the_coarser_figure_sets_the_band_even_when_it_is_the_larger_number():
+    """The false contradiction this produced was the only one in the whole corpus.
+
+    "76 Cr" and "₹758Mn" are one figure written twice, at two and three significant figures.
+    The band used to be taken from whichever value was numerically smaller, which is the
+    precise side here, so the pair was reported as a genuine disagreement.
+    """
+    crore, million = 76 * 1e7, 758 * 1e6
+    assert relative_difference(crore, million) <= rounding_tolerance(crore, million, "currency")
+
+
+def test_a_real_disagreement_is_still_outside_the_band():
+    """The widened band must not swallow figures that actually differ."""
+    assert relative_difference(6.5, 6.6) > rounding_tolerance(6.5, 6.6, "ratio")
+    assert relative_difference(8.2, 6.5) > rounding_tolerance(8.2, 6.5, "ratio")

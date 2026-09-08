@@ -28,6 +28,7 @@ from app.core.text import collapse_whitespace
 from app.core.units import (
     COUNT_NOUNS,
     CURRENCY,
+    DIMENSIONLESS,
     Unit,
     is_bare_scale,
     normalize_currency,
@@ -190,6 +191,14 @@ def normalize_candidate(
         if value_number is not None
         else None
     )
+    # A number nothing labelled is still a number. Leaving the base empty would make every
+    # bare count incomparable — and counts are exactly what is left once the document's
+    # currency stops being pushed onto figures that are not amounts. It is still recorded as
+    # unresolved, because "no unit was established" and "the unit is one" are different
+    # claims and the evaluation page should not confuse them.
+    unlabelled = value_number is not None and unit is None
+    if unlabelled:
+        unit = Unit(canonical="", unit_class=DIMENSIONLESS, factor=1.0)
     value_base = value_number * unit.factor if (value_number is not None and unit) else None
 
     period_label = (
@@ -305,8 +314,18 @@ def _resolve(
             scale = unit.factor if unit else (inline_scale or 1.0)
             return resolve_unit(counted, scale=scale) or unit
 
-    wants_currency = unresolved
-    wants_scale = inline_scale is None and (unresolved or unit.unit_class == CURRENCY)
+    # A declaration like "all amounts in Indian Rupees in million" says something about
+    # *amounts*, and inheriting it onto everything else was producing nonsense: "18,793 pin
+    # codes covered" came out of the annual report as 1.879e13 INR billion, a figure no
+    # document contains and one that then competes with real money in comparisons.
+    #
+    # So both currency and scale now need some reason to believe the figure is an amount —
+    # a currency the extractor or the page already established, or a measure that names one.
+    # A figure that fails the test keeps its bare number, which is the honest reading of a
+    # count printed under a heading about rupees.
+    monetary = bool(stated_currency) or _names_money(candidate)
+    wants_currency = unresolved and monetary
+    wants_scale = inline_scale is None and monetary and (unresolved or unit.unit_class == CURRENCY)
     if not wants_currency and not wants_scale:
         return unit
 
@@ -354,6 +373,88 @@ def _split_period_from_predicate(predicate: str) -> tuple[str, str | None]:
         # The period was the whole name; keep it rather than reduce the measure to nothing.
         return predicate, None
     return remainder, match.group(0).strip()
+
+
+# Words that make a measure an amount of money. General finance vocabulary rather than
+# anything drawn from this corpus: the same list decides correctly for a water utility's
+# capital expenditure and a bank's provisions. Matched on word stems so plurals and
+# adjectival forms ("revenues", "costing") are covered without enumerating them.
+_MONEY_STEMS = (
+    "revenue",
+    "sales",
+    "turnover",
+    "income",
+    "earning",
+    "profit",
+    "loss",
+    "ebitda",
+    "ebit",
+    "margin",
+    "cost",
+    "expense",
+    "expenditure",
+    "capex",
+    "opex",
+    "price",
+    "fee",
+    "tariff",
+    "salary",
+    "wage",
+    "remuneration",
+    "compensation",
+    "tax",
+    "duty",
+    "levy",
+    "subsidy",
+    "grant",
+    "debt",
+    "borrowing",
+    "loan",
+    "advance",
+    "deposit",
+    "equity",
+    "capital",
+    "asset",
+    "liability",
+    "provision",
+    "reserve",
+    "cash",
+    "fund",
+    "investment",
+    "valuation",
+    "value",
+    "worth",
+    "budget",
+    "spend",
+    "outlay",
+    "payment",
+    "receipt",
+    "payable",
+    "receivable",
+    "dividend",
+    "interest",
+    "premium",
+    "discount",
+    "amount",
+    "balance",
+    "proceeds",
+    "consideration",
+    "gdp",
+    "gva",
+    "surplus",
+    "deficit",
+    "exports",
+    "imports",
+    "remittance",
+)
+
+
+def _names_money(candidate: dict[str, Any]) -> bool:
+    """Whether the measure describes an amount of money rather than a count of things."""
+    predicate = collapse_whitespace(str(candidate.get("predicate", ""))).lower()
+    if not predicate:
+        return False
+    return any(stem in predicate for stem in _MONEY_STEMS)
 
 
 def _counted_noun(candidate: dict[str, Any]) -> str | None:

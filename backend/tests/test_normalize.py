@@ -212,3 +212,38 @@ class TestPeriodInMeasureName:
 
     def test_a_name_that_is_only_a_period_is_left_alone(self):
         assert normalise(predicate="FY24").predicate == "fy24"
+
+
+def test_a_count_does_not_inherit_the_documents_currency():
+    """The filing declares rupees in million; pin codes are not rupees.
+
+    "18,793 pin codes covered" was coming out of the corpus as 1.879e13 INR billion — a
+    figure no document contains, which then competed with real money in comparisons.
+    """
+    normalised = normalise(
+        statement="Delhivery covered 18,793 pin codes as of March 31, 2024.",
+        predicate="pin codes covered",
+        value_text="18,793",
+        value_number=18793,
+        unit="",
+        currency="",
+        period="as at March 31, 2024",
+        evidence_quote="18,793 Pin codes covered",
+    )
+    assert normalised.currency is None
+    assert normalised.value_base == 18793
+
+
+def test_an_amount_with_no_unit_still_inherits_the_declaration():
+    """The behaviour the gate must not break: the headline reconciliation needs it."""
+    normalised = normalise(
+        statement="Revenue from services for FY24 was 81,419.7",
+        predicate="revenue from services",
+        value_text="81,419.7",
+        value_number=81419.7,
+        unit="",
+        currency="",
+        evidence_quote="Revenue from services 81,419.7",
+    )
+    assert normalised.currency == "INR"
+    assert normalised.value_base == pytest.approx(81419.7 * 1e6)

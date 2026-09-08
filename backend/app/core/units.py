@@ -549,12 +549,16 @@ def rounding_tolerance(left: float, right: float, unit_class: str | None) -> flo
     rounded, not sit at a flat percentage.
     """
     base = tolerance_for(unit_class)
-    coarser = min(abs(left), abs(right))
-    if coarser == 0:
-        return base
     magnitude = max(abs(left), abs(right))
-    implied = _rounding_step(coarser) / magnitude if magnitude else base
-    return max(base, min(implied, 0.05))
+    if magnitude == 0:
+        return base
+    # Coarseness is a property of how a figure was rounded, not of how large it is. Taking
+    # the smaller of the two values instead gets this backwards whenever the coarser figure
+    # is also the bigger one: "76 Cr" carries two significant figures and "758 Mn" carries
+    # three, but 758,000,000 is the smaller number, so the band was set from the *precise*
+    # side and the pair — one figure, written twice — was reported as a contradiction.
+    step = max(_rounding_step(left), _rounding_step(right))
+    return max(base, min(step / magnitude, 0.05))
 
 
 def _rounding_step(value: float) -> float:
