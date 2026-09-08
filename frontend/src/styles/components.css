@@ -824,3 +824,13 @@ table.data--compact tbody tr:last-child td {
   color: var(--text);
   font-weight: 500;
 }
+
+.export-links {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.export-links .btn {
+  text-decoration: none;
+}

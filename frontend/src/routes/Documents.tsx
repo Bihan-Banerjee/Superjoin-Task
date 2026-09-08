@@ -97,6 +97,7 @@ export default function Documents() {
   };
 
   const { data: health } = useQuery({ queryKey: ["health"], queryFn: api.health });
+  const readOnly = Boolean(health?.read_only);
 
   const documents = data?.documents ?? [];
   const running = Object.values(active);
@@ -124,6 +125,12 @@ export default function Documents() {
         document follows are read from the document itself.
       </p>
 
+      {readOnly ? (
+        <p className="graph__notice">
+          This deployment is read-only. It serves a prepared snapshot, so documents cannot be
+          uploaded, reprocessed or deleted — and no model key is needed or present.
+        </p>
+      ) : (
       <div
         className={dragging ? "dropzone dropzone--active" : "dropzone"}
         onDragOver={(event) => {
@@ -158,6 +165,7 @@ export default function Documents() {
           {upload.isPending ? "Uploading" : "Choose files"}
         </button>
       </div>
+      )}
 
       {notice ? <p className="meta dropzone__notice">{notice}</p> : null}
       {upload.error ? <ErrorNote error={upload.error} /> : null}
@@ -211,6 +219,7 @@ export default function Documents() {
                     key={document.id}
                     document={document}
                     repeats={documents.find((other) => other.id === document.near_duplicate_of)}
+                    readOnly={readOnly}
                     onReprocess={() => reprocess.mutate(document.id)}
                     onDelete={() => {
                       if (
@@ -236,12 +245,14 @@ export default function Documents() {
 function DocumentRow({
   document,
   repeats,
+  readOnly,
   onReprocess,
   onDelete,
   busy,
 }: {
   document: DocumentSummary;
   repeats?: DocumentSummary;
+  readOnly: boolean;
   onReprocess: () => void;
   onDelete: () => void;
   busy: boolean;
@@ -259,6 +270,12 @@ function DocumentRow({
         <div className="meta">
           {formatBytes(document.byte_size)} · added {formatDate(document.created_at)}
         </div>
+        {document.scanned_pages > 0 ? (
+          <div className="meta" title={SCANNED_HINT}>
+            {document.scanned_pages} page(s) had no text layer
+            {document.ocr_pages > 0 ? `, ${document.ocr_pages} read by OCR` : ""}
+          </div>
+        ) : null}
         {repeats ? (
           <div className="meta" title={REPEAT_HINT}>
             Repeats {formatPercent(document.content_overlap ?? 0)} of {repeats.title}
@@ -281,19 +298,23 @@ function DocumentRow({
         {document.error ? <div className="meta">{document.error}</div> : null}
       </td>
       <td>
-        <div className="row-actions">
-          <button type="button" className="btn btn--sm" onClick={onReprocess} disabled={busy}>
-            Reprocess
-          </button>
-          <button
-            type="button"
-            className="btn btn--sm btn--danger"
-            onClick={onDelete}
-            disabled={busy}
-          >
-            Delete
-          </button>
-        </div>
+        {readOnly ? (
+          <span className="meta">Read-only</span>
+        ) : (
+          <div className="row-actions">
+            <button type="button" className="btn btn--sm" onClick={onReprocess} disabled={busy}>
+              Reprocess
+            </button>
+            <button
+              type="button"
+              className="btn btn--sm btn--danger"
+              onClick={onDelete}
+              disabled={busy}
+            >
+              Delete
+            </button>
+          </div>
+        )}
       </td>
     </tr>
   );
@@ -304,6 +325,10 @@ function DocumentRow({
 const REPEAT_HINT =
   "Most of this document's text was already in the layer when it was added. " +
   "Nothing was skipped — the pages that differ are still the reason to keep it.";
+
+const SCANNED_HINT =
+  "These pages carry an image with no text behind it. Facts cannot be extracted from them " +
+  "unless OCR is enabled with ENABLE_OCR=true.";
 
 function scaleName(scale: number | null): string {
   if (!scale || scale === 1) return "";

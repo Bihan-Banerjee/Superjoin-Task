@@ -25,7 +25,7 @@ from app.config import get_settings  # noqa: E402
 from app.core.hashing import sha256_file  # noqa: E402
 from app.db.engine import init_database, session_scope  # noqa: E402
 from app.db.models import DOC_STATUS_PENDING, Document, Job  # noqa: E402
-from app.main import configure_logging  # noqa: E402
+from app.main import configure_logging, use_utf8_console  # noqa: E402
 from app.pipeline.orchestrator import ingest_document  # noqa: E402
 
 logger = logging.getLogger("ingest")
@@ -145,6 +145,7 @@ def main() -> int:
     arguments = parser.parse_args()
 
     configure_logging(arguments.log_level)
+    use_utf8_console()
     init_database()
 
     files = collect(arguments.paths, arguments.recursive)

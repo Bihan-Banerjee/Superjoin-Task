@@ -3,7 +3,15 @@ import { Suspense, lazy, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import RelationCard from "../components/RelationCard";
-import { Empty, ErrorNote, Field, Loading, Pagination, Panel } from "../components/primitives";
+import {
+  Empty,
+  ErrorNote,
+  ExportLinks,
+  Field,
+  Loading,
+  Pagination,
+  Panel,
+} from "../components/primitives";
 import { api } from "../lib/api";
 import { dimensionLabel, relationLabel, truncate } from "../lib/format";
 
@@ -190,6 +198,7 @@ export default function Relations() {
             </select>
           </Field>
           <div className="toolbar__spacer" />
+          <ExportLinks resource="relations" params={{ document_id: documentId }} />
           {graphAvailable ? (
             <div className="view-switch">
               <button

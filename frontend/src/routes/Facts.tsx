@@ -6,6 +6,7 @@ import EvidenceViewer from "../components/EvidenceViewer";
 import {
   Chip,
   Empty,
+  ExportLinks,
   ErrorNote,
   Field,
   Loading,
@@ -183,6 +184,10 @@ export default function Facts() {
               </select>
             </Field>
             <div className="toolbar__spacer" />
+            <ExportLinks
+              resource="facts"
+              params={{ document_id: documentId, q: query, measure_id: measureId }}
+            />
             <button
               type="button"
               className="btn btn--sm btn--quiet"

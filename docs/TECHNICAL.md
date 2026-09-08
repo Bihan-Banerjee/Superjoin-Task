@@ -343,8 +343,22 @@ token share, sentence-terminator density, table coverage, image area, vector den
 dot-leader score for contents pages. Nothing keys off a filename, a publisher, or a phrase
 that only appears in this corpus.
 
-Types: `prose`, `table`, `chart_slide`, `mixed`, `toc`, `boilerplate`, `empty`. The last
-three are skipped for extraction and still indexed for search.
+Types: `prose`, `table`, `chart_slide`, `mixed`, `toc`, `boilerplate`, `empty`, `scanned`.
+The last four are skipped for extraction and still indexed for search.
+
+`scanned` exists to separate two things that otherwise look identical. A page with no text
+layer and substantial image coverage was produced by a scanner or a print-to-image; a page
+with nothing on it is blank. Both yield no facts, but only one of them is a limitation, and a
+document made entirely of scans would otherwise ingest "successfully" with nothing extracted
+and no explanation — the failure most easily mistaken for a bug in extraction.
+
+The count of unread pages, and how many of them OCR recovered, is stored on the document and
+shown on the Documents page. With `ENABLE_OCR=true` those pages are re-read through Tesseract
+and everything downstream — words, boxes, quote location, highlighting — works against the
+transcription exactly as it would against a real text layer. A page read that way is flagged,
+because an OCR quote is a transcription and can be wrong in ways a text layer cannot. If
+Tesseract is missing the pass stops at the first page and the document still ingests, with
+its scanned pages reported as unread rather than the whole run failing.
 
 **3. Layout** (`layout.py`) — the part with the most work in it, because the PDF text layer
 discards the spatial relationships that make a page readable.
@@ -547,6 +561,13 @@ registry.
 The assignment asks for large PDFs without significant performance issues. Four things were
 measured on the 511-page starter corpus.
 
+`scripts/benchmark.py` reproduces these numbers offline with no model calls, and writes
+`docs/benchmarks.md`. On the starter corpus the local stages — parse, classify, layout, the
+whole cost of ingest that is not a model call — run at **138 ms/page, 70.5 s for 511 pages
+across six documents**, with the slowest document at 215 ms/page. Model calls dominate
+everything else, which is why the cache matters: the second full run of the corpus took
+1,806 s against 5,111 s, with 451 of 587 calls served from disk.
+
 | Change | Effect |
 | --- | --- |
 | Gate table detection behind cheap signals | `find_tables` costs ~450 ms/page, about fifty times everything else combined. It now runs only on pages with ruled lines or a high numeric-token share. |
@@ -617,6 +638,8 @@ GET    /api/relations                            filter by type, dimension, deci
                                                  document, severity, cross-document
 GET    /api/relations/{id}
 GET    /api/relations/graph                      nodes and edges; 404 unless ENABLE_GRAPH_VIEW
+GET    /api/export/facts?format=csv|json         the current filter, streamed
+GET    /api/export/relations?format=csv|json     both sides of every pair
 
 GET    /api/measures                             the registry
 GET    /api/entities
@@ -731,6 +754,40 @@ Those tests found four defects that would all have failed on the first live run:
 
 Plus the SQLite writer deadlock described under [Performance](#performance).
 
+### Two bugs the first full corpus run exposed
+
+Both were found by reading the Cases page against the real corpus rather than by a test, and
+both had been producing wrong output quietly.
+
+**A count inheriting the document's currency.** The annual report declares "all amounts in
+Indian Rupees in million". That declaration was being applied to any figure that arrived
+without a unit — including "18,793 pin codes covered", which came out as `1.879e13 INR
+billion`. A figure no document contains, competing with real money in comparisons.
+
+The fix inverts the default. Currency and scale are inherited only when there is some reason
+to believe the figure is an amount: a currency the extractor or the page already established,
+or a measure that names one. A measure that does not is left as a bare number. The money
+vocabulary is general finance language rather than anything drawn from this corpus — the same
+list decides correctly for a water utility's capital expenditure, which is what the
+generalisation test checks.
+
+A consequence worth naming: a number nothing labelled now normalises as dimensionless rather
+than resolving to nothing at all, because otherwise every bare count would become
+incomparable — and counts are exactly what is left once the currency stops being pushed onto
+figures that are not amounts. It is still recorded as `unit_unresolved`, since "no unit was
+established" and "the unit is one" are different claims.
+
+**The rounding band taken from the wrong side.** `rounding_tolerance` widens the agreement
+band to match how coarsely the coarser figure was rounded. It was picking that figure with
+`min(abs(left), abs(right))` — the numerically smaller value — but coarseness is a property
+of the rounding step, not of magnitude.
+
+"76 Cr" and "₹758Mn" are one figure written twice, at two and three significant figures. 76
+crore is 760 million, so the *larger* value is the coarser one; the band was set from the
+precise side and the pair was reported as a genuine contradiction — the only contradiction in
+the entire corpus, and therefore the one the required case would have been built from. It now
+takes the larger of the two rounding steps.
+
 ### A day read as a year
 
 The worst defect so far was not found by a test. It was found by clicking an edge in the
@@ -766,6 +823,42 @@ it put an unfamiliar path through the same data in front of a reader, and a fals
 contradiction is much easier to notice when you are not the person who expected it to be
 there. The bug was equally visible in the table; nobody had looked at that row.
 
+### The snapshot poisoned its own tests
+
+Worth recording because the failure was circular and took a while to see.
+
+`LlmClient` consults two caches: the committed `seed/replay` recordings, always enabled, and
+a runtime cache that ingest writes to. The test suite used to share that runtime cache — a
+defect fixed by disabling it in the tests — but two responses invented by a stub provider in
+`test_adjudicate.py` had already been written there. `snapshot.py export` then copied the
+runtime cache wholesale into `seed/replay`.
+
+From that point the tests failed. The stub's own answers were being served back from the
+replay cache before the stub was reached, so `provider.calls` was zero, the call-count
+assertions failed, and the verdict came from disk rather than from the object under test. The
+snapshot was serving the tests their own output.
+
+The export now copies a recording only when it names a real provider — an allow-list, so a
+stub added later is excluded by default rather than having to be remembered. The two polluted
+entries were purged from both caches, and a test covers the filter.
+
+### Generalisation
+
+`tests/test_generalisation.py` ingests a document deliberately unlike anything the project
+was built against: a water utility in another country, a fiscal year running October to
+September, amounts in US dollars and billions, and measures that are not financial at all —
+megalitres per day, connections, non-revenue water.
+
+It exists because every other test in the suite uses Indian corporate filings, which is the
+corpus the thresholds were tuned on. Without it the suite could pass while the pipeline
+quietly only worked on that corpus, which is exactly what the brief's "it will be tested on
+unseen PDFs" is warning about.
+
+It asserts that the foreign fiscal year resolves to its own dates, that two ways of writing
+that year agree, that an unfamiliar currency and scale normalise, that measures from another
+domain enter the registry, and that the `supersedes` rule fires on a restatement there just as
+it does on a filing. No production code changed to make any of it pass.
+
 ## Configuration
 
 All configuration is environment variables; see `.env.example`. Nothing is required to browse
@@ -787,3 +880,5 @@ Two settings trade cost against confidence and are worth knowing about:
 | `ADJUDICATION_CROSS_CHECK` | `true` | Reads every escalated pair a second time with the facts swapped. Doubles the cost of the smallest stage; turns an unverified model verdict into a measured one. |
 | `NEAR_DUPLICATE_RATIO` | `0.9` | How much of a document's substantive text must already be in the layer before it is flagged as repeating another. High on purpose — a false flag on a genuinely new filing costs more than a missed duplicate. |
 | `ENABLE_GRAPH_VIEW` | `false` | Adds a node-graph rendering of the relation table. See below for why it is off. |
+| `READ_ONLY` | `false` | Serves the layer and refuses every write. For a deployment showing the snapshot to reviewers: no key needed, none should be present. |
+| `ENABLE_OCR` | `false` | Reads scanned pages through Tesseract. Detection of them is unconditional; only the reading is opt-in. |

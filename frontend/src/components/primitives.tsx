@@ -161,3 +161,39 @@ export function Pagination({
     </div>
   );
 }
+
+/**
+ * Download the current view as a file.
+ *
+ * The filters in the URL are passed through, so what lands in the spreadsheet is what is on
+ * screen rather than the whole corpus — otherwise the export answers a different question
+ * from the one the reader was asking.
+ */
+export function ExportLinks({
+  resource,
+  params,
+}: {
+  resource: "facts" | "relations";
+  params?: Record<string, string | number | null | undefined>;
+}) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value === null || value === undefined || value === "") continue;
+    search.set(key, String(value));
+  }
+  const suffix = search.toString();
+  const url = (format: string) =>
+    `/api/export/${resource}?format=${format}${suffix ? `&${suffix}` : ""}`;
+
+  return (
+    <span className="export-links">
+      <span className="meta">Export</span>
+      <a className="btn btn--sm" href={url("csv")} download>
+        CSV
+      </a>
+      <a className="btn btn--sm" href={url("json")} download>
+        JSON
+      </a>
+    </span>
+  );
+}

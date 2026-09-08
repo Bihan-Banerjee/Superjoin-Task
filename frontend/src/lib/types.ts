@@ -21,6 +21,8 @@ export interface DocumentSummary {
   sha256: string;
   near_duplicate_of: number | null;
   content_overlap: number | null;
+  scanned_pages: number;
+  ocr_pages: number;
   created_at: string | null;
   fact_count: number;
   relation_count: number;
@@ -211,6 +213,8 @@ export interface Health {
   concurrency: number;
   rate_limit_rpm: number;
   throttle_warnings: string[];
+  read_only: boolean;
+  ocr_enabled: boolean;
   graph_view_enabled: boolean;
   graph_view_warning: string | null;
 }
