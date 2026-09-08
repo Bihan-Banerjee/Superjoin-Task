@@ -19,6 +19,8 @@ export interface DocumentSummary {
   status: DocumentStatus;
   error: string | null;
   sha256: string;
+  near_duplicate_of: number | null;
+  content_overlap: number | null;
   created_at: string | null;
   fact_count: number;
   relation_count: number;
@@ -118,6 +120,9 @@ export interface Relation {
   delta_relative: number | null;
   cross_document: boolean;
   similarity: number | null;
+  superseded_fact_id: number | null;
+  order_sensitive: boolean;
+  reverse_relation_type: RelationType | null;
   left: Fact;
   right: Fact;
   selected_because?: string[];
@@ -242,6 +247,11 @@ export interface Evaluation {
     by_dimension: { dimension: string; count: number }[];
     by_decision: { decided_by: string; count: number }[];
     by_rule: { rule_id: string; count: number }[];
+    adjudication: {
+      decided_by_model: number;
+      order_sensitive: number;
+      order_sensitive_rate: number;
+    };
   };
   registry: {
     measures: number;

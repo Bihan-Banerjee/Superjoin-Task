@@ -54,6 +54,11 @@ export default function RelationCard({
           >
             {relation.decided_by === "rule" ? `Rule: ${relation.rule_id}` : "Reviewed in context"}
           </Chip>
+          {relation.order_sensitive ? (
+            <Chip tone="contradicts" title={unsettledExplanation(relation)}>
+              Unsettled on re-reading
+            </Chip>
+          ) : null}
         </div>
         <div className="relation__metrics meta">
           {relation.delta_relative !== null && relation.delta_relative > 0 ? (
@@ -77,8 +82,18 @@ export default function RelationCard({
       ) : null}
 
       <div className="relation__pair">
-        <FactSide fact={relation.left} differences={differences} side="left" />
-        <FactSide fact={relation.right} differences={differences} side="right" />
+        <FactSide
+          fact={relation.left}
+          differences={differences}
+          side="left"
+          superseded={relation.superseded_fact_id === relation.left.id}
+        />
+        <FactSide
+          fact={relation.right}
+          differences={differences}
+          side="right"
+          superseded={relation.superseded_fact_id === relation.right.id}
+        />
       </div>
 
       <div className="relation__footer">
@@ -98,6 +113,17 @@ export default function RelationCard({
         </div>
       ) : null}
     </article>
+  );
+}
+
+/** Why a verdict is marked unsettled, in the words a reader needs to judge it. */
+function unsettledExplanation(relation: Relation): string {
+  const other = relation.reverse_relation_type
+    ? `read it as ${relationLabel(relation.reverse_relation_type).toLowerCase()}`
+    : "disagreed";
+  return (
+    `Read a second time with the two facts swapped, the same comparison ${other}. ` +
+    "The verdict depends on which fact came first, so it is recorded as unsettled."
   );
 }
 
@@ -127,18 +153,24 @@ function FactSide({
   fact,
   differences,
   side,
+  superseded = false,
 }: {
   fact: Fact;
   differences: Differences;
   side: "left" | "right";
+  superseded?: boolean;
 }) {
   const span = formatPeriodSpan(fact);
   return (
-    <div className="relation__side" data-side={side}>
+    <div className="relation__side" data-side={side} data-superseded={superseded || undefined}>
       <div className="relation__source">
         <span className="relation__document">{fact.source.document_title}</span>
         <span className="meta">{factLocation(fact)}</span>
       </div>
+
+      {superseded ? (
+        <p className="relation__superseded">Superseded by the other figure</p>
+      ) : null}
 
       <p className="relation__statement">{fact.statement}</p>
 

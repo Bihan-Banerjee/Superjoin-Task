@@ -141,6 +141,24 @@ export default function Evaluation() {
           <Bars
             data={relations.by_rule.map((row) => ({ label: row.rule_id, count: row.count }))}
           />
+
+          <h3 className="panel__subhead">Model agreement with itself</h3>
+          <p className="meta">
+            Pairs the rules could not settle are read twice, with the two facts swapped. A
+            verdict that changes on the second reading was about the ordering rather than the
+            evidence, so it is kept but marked unsettled rather than trusted.
+          </p>
+          <Rows
+            rows={[
+              ["Pairs read in context", formatNumber(relations.adjudication.decided_by_model, 0)],
+              [
+                "Changed on re-reading",
+                `${formatNumber(relations.adjudication.order_sensitive, 0)} (${formatPercent(
+                  relations.adjudication.order_sensitive_rate,
+                )})`,
+              ],
+            ]}
+          />
         </Panel>
       </div>
 

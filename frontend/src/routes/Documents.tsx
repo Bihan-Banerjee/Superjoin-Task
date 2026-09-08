@@ -4,7 +4,13 @@ import { Link } from "react-router-dom";
 
 import { Empty, ErrorNote, Loading, Panel, Progress } from "../components/primitives";
 import { api, watchJob } from "../lib/api";
-import { formatBytes, formatDate, formatNumber, titleCase } from "../lib/format";
+import {
+  formatBytes,
+  formatDate,
+  formatNumber,
+  formatPercent,
+  titleCase,
+} from "../lib/format";
 import type { DocumentSummary, Job } from "../lib/types";
 
 interface ActiveJob {
@@ -204,6 +210,7 @@ export default function Documents() {
                   <DocumentRow
                     key={document.id}
                     document={document}
+                    repeats={documents.find((other) => other.id === document.near_duplicate_of)}
                     onReprocess={() => reprocess.mutate(document.id)}
                     onDelete={() => {
                       if (
@@ -228,11 +235,13 @@ export default function Documents() {
 
 function DocumentRow({
   document,
+  repeats,
   onReprocess,
   onDelete,
   busy,
 }: {
   document: DocumentSummary;
+  repeats?: DocumentSummary;
   onReprocess: () => void;
   onDelete: () => void;
   busy: boolean;
@@ -250,6 +259,11 @@ function DocumentRow({
         <div className="meta">
           {formatBytes(document.byte_size)} · added {formatDate(document.created_at)}
         </div>
+        {repeats ? (
+          <div className="meta" title={REPEAT_HINT}>
+            Repeats {formatPercent(document.content_overlap ?? 0)} of {repeats.title}
+          </div>
+        ) : null}
       </td>
       <td>{document.publisher ?? "—"}</td>
       <td>{document.doc_type ? titleCase(document.doc_type) : "—"}</td>
@@ -284,6 +298,12 @@ function DocumentRow({
     </tr>
   );
 }
+
+// Matched on page text rather than on the file, so the same content re-exported or
+// re-downloaded is caught even though its bytes differ.
+const REPEAT_HINT =
+  "Most of this document's text was already in the layer when it was added. " +
+  "Nothing was skipped — the pages that differ are still the reason to keep it.";
 
 function scaleName(scale: number | null): string {
   if (!scale || scale === 1) return "";
