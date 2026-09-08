@@ -10,6 +10,7 @@ locate a quote in *this* string, so any tidying done here would have to be undon
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from concurrent.futures import ProcessPoolExecutor
@@ -20,6 +21,8 @@ from typing import Any
 import pymupdf
 
 from app.core.units import detect_unit_declaration
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -64,6 +67,17 @@ class ParsedPage:
     printed_label: str | None
     unit_currency: str | None = None
     unit_scale: float | None = None
+    ocr_applied: bool = False
+
+    @property
+    def looks_scanned(self) -> bool:
+        """Ink on the page, but nothing to read it from.
+
+        Essentially no text layer plus substantial image coverage is what a scanner, a fax
+        or a print-to-image produces. Telling that apart from a genuinely blank page matters:
+        one is a limitation worth reporting, the other is simply nothing to report.
+        """
+        return len(self.text.strip()) < SCANNED_TEXT_CHARS and self.image_area_ratio >= 0.5
 
     @property
     def word_count(self) -> int:
@@ -98,6 +112,9 @@ def parse_pdf(
     *,
     page_numbers: list[int] | None = None,
     workers: int = 1,
+    ocr: bool = False,
+    ocr_language: str = "eng",
+    ocr_dpi: int = 300,
 ) -> ParsedDocument:
     """Parse a PDF into per-page structures.
 
@@ -126,6 +143,12 @@ def parse_pdf(
     if pages is None:
         pages = _parse_parallel(path, targets, workers)
 
+    if ocr:
+        scanned = [page.page_number for page in pages if page.looks_scanned]
+        if scanned:
+            recovered = _ocr_pages(path, scanned, ocr_language, ocr_dpi)
+            pages = [recovered.get(page.page_number, page) for page in pages]
+
     text_bearing = sum(1 for page in pages if page.word_count >= 8)
     return ParsedDocument(
         path=path,
@@ -138,6 +161,48 @@ def parse_pdf(
 
 
 _PARALLEL_THRESHOLD = 12
+
+# Below this many characters a page has no usable text layer. Generous enough to tolerate a
+# scanner that picked up a stray header or a page-number stamp.
+SCANNED_TEXT_CHARS = 24
+
+
+def _ocr_pages(
+    path: Path, page_numbers: list[int], language: str, dpi: int
+) -> dict[int, ParsedPage]:
+    """Re-read scanned pages through Tesseract.
+
+    Runs in-process and single-threaded rather than through the parallel path: OCR is around
+    a second a page against roughly ten milliseconds for a normal parse, and scanned pages
+    are rare enough in this corpus that the pool is not worth the complexity.
+
+    A missing or broken Tesseract raises on the first page. That is a fact about the
+    deployment rather than about the page, so the loop stops instead of failing identically
+    on every remaining page — the document still ingests, with its scanned pages reported as
+    unread.
+    """
+    recovered: dict[int, ParsedPage] = {}
+    document = pymupdf.open(path)
+    try:
+        for number in page_numbers:
+            page = document[number - 1]
+            try:
+                textpage = page.get_textpage_ocr(language=language, dpi=dpi, full=True)
+            except Exception as error:
+                logger.warning(
+                    "OCR is enabled but unavailable (%s); %d scanned page(s) left unread",
+                    error,
+                    len(page_numbers) - len(recovered),
+                )
+                break
+            parsed = _parse_page(page, number, textpage=textpage)
+            parsed.ocr_applied = True
+            recovered[number] = parsed
+    finally:
+        document.close()
+    if recovered:
+        logger.info("recovered text from %d scanned page(s) by OCR", len(recovered))
+    return recovered
 
 
 def _parse_parallel(path: Path, targets: list[int], workers: int) -> list[ParsedPage]:
@@ -177,9 +242,15 @@ def _clean_metadata(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _parse_page(page: pymupdf.Page, page_number: int) -> ParsedPage:
+def _parse_page(
+    page: pymupdf.Page, page_number: int, textpage: pymupdf.TextPage | None = None
+) -> ParsedPage:
     rect = page.rect
-    text = page.get_text("text")
+    # `textpage` carries an OCR transcription when one was made. Everything downstream —
+    # words, boxes, quote location, highlighting — then works against that transcription
+    # exactly as it would against a real text layer.
+    read = {"textpage": textpage} if textpage is not None else {}
+    text = page.get_text("text", **read)
     words = [
         Word(
             text=item[4],
@@ -191,7 +262,7 @@ def _parse_page(page: pymupdf.Page, page_number: int) -> ParsedPage:
             line=int(item[6]),
             index=int(item[7]),
         )
-        for item in page.get_text("words")
+        for item in page.get_text("words", **read)
         if item[4].strip()
     ]
 

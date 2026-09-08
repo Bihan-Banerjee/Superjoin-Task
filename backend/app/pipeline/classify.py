@@ -25,6 +25,7 @@ from app.db.models import (
     PAGE_EMPTY,
     PAGE_MIXED,
     PAGE_PROSE,
+    PAGE_SCANNED,
     PAGE_TABLE,
     PAGE_TOC,
 )
@@ -103,6 +104,17 @@ def classify_page(page: ParsedPage) -> PageSignals:
     }
 
     if words < 6:
+        # A blank page and a scanned one both yield nothing, and reporting them the same way
+        # hides the only one of the two that is a limitation rather than an absence. A
+        # document made entirely of scans would otherwise ingest "successfully" with no facts
+        # and nothing to say about why.
+        if page.looks_scanned:
+            return PageSignals(
+                PAGE_SCANNED,
+                False,
+                "an image with no text layer to read; OCR is off or did not recover text",
+                metrics,
+            )
         return PageSignals(PAGE_EMPTY, False, "no meaningful text on the page", metrics)
 
     if metrics["toc_score"] >= 0.3:

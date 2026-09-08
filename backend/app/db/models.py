@@ -68,6 +68,8 @@ PAGE_MIXED = "mixed"
 PAGE_TOC = "toc"
 PAGE_BOILERPLATE = "boilerplate"
 PAGE_EMPTY = "empty"
+# Ink on the page but no text layer to read it from: a photocopy, a fax, a print-to-scan.
+PAGE_SCANNED = "scanned"
 
 FACT_QUANTITATIVE = "quantitative"
 FACT_TEMPORAL = "temporal"
@@ -129,6 +131,12 @@ class Document(Base):
     )
     content_overlap: Mapped[float | None] = mapped_column(Float)
 
+    # Pages carrying an image and no text layer, and how many of those OCR recovered. A
+    # document that is entirely scanned yields nothing at all, and without these two numbers
+    # that is indistinguishable from a document that simply states no facts.
+    scanned_pages: Mapped[int] = mapped_column(Integer, default=0)
+    ocr_pages: Mapped[int] = mapped_column(Integer, default=0)
+
     status: Mapped[str] = mapped_column(String(32), default=DOC_STATUS_PENDING, index=True)
     error: Mapped[str | None] = mapped_column(Text)
     profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -170,6 +178,10 @@ class Page(Base):
     unit_scale: Mapped[float | None] = mapped_column(Float)
     layout: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     extracted: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Text on this page was recovered by OCR rather than read from the file. Stored per page
+    # because it changes what the evidence is worth: an OCR quote is a transcription, and a
+    # transcription can be wrong in ways a text layer cannot.
+    ocr_applied: Mapped[bool] = mapped_column(Boolean, default=False)
 
     document: Mapped[Document] = relationship(back_populates="pages")
     facts: Mapped[list[Fact]] = relationship(
