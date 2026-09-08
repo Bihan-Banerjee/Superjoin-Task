@@ -79,3 +79,45 @@ REVISED_DECK_PAGES = [
 Revenue from services for FY24 was Rs 8,500 Cr on a restated basis.
 Express Parcel shipments for FY24 were 812 Mn.""",
 ]
+
+
+# A document deliberately unlike anything in the starter corpus: a different country, a
+# different fiscal convention (October to September), a different currency and scale, a
+# different reporting vocabulary, and a domain that is not corporate finance at all.
+#
+# Nothing about it should need new code. That is the claim the brief makes the project
+# defend — "it will be tested on unseen PDFs" — and this is where it is checked.
+UTILITY_PAGES = [
+    """Cascadia Water Authority
+Statistical Bulletin for the fiscal year ended September 30, 2024
+
+All monetary amounts are stated in US Dollars in billions unless otherwise indicated.
+
+The Authority operates under a fiscal year beginning October 1 and ending September 30.
+""",
+    """Operating summary
+
+Capital expenditure for FY2024 was US$ 4.6 billion, against US$ 4.1 billion in FY2023.
+Non-revenue water was 18.4% for the fiscal year ended September 30, 2024.
+The Authority served 3.2 million connections as at September 30, 2024.
+Treated volume reached 812 megalitres per day for FY2024.
+""",
+    """Restated comparatives
+
+Capital expenditure for FY2024 is restated as US$ 4.9 billion following reclassification
+of contributed assets. Non-revenue water for FY2024 is estimated at 18.9%.
+""",
+]
+
+UTILITY_PROFILE = {
+    "title": "Cascadia Water Authority Statistical Bulletin FY2024",
+    "publisher": "Cascadia Water Authority",
+    "doc_type": "statistical_bulletin",
+    "subject_entity": "Cascadia Water Authority",
+    "period_label": "FY2024",
+    "as_of_date": "2024-09-30",
+    "default_currency": "USD",
+    "default_scale": "billion",
+    "fiscal_convention": "us_federal",
+    "reporting_basis": "consolidated",
+}
