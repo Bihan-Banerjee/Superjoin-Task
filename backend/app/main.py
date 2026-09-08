@@ -37,6 +37,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_database()
     for warning in settings.throttle_warnings():
         logger.warning(warning)
+    graph_warning = settings.graph_view_warning()
+    if graph_warning:
+        logger.warning(graph_warning)
     logger.info("knowledge layer ready at %s", settings.sqlalchemy_url)
     yield
 
@@ -102,4 +105,6 @@ def health() -> dict[str, Any]:
         "concurrency": settings.llm_concurrency,
         "rate_limit_rpm": settings.llm_rate_limit_rpm,
         "throttle_warnings": settings.throttle_warnings(),
+        "graph_view_enabled": settings.enable_graph_view,
+        "graph_view_warning": settings.graph_view_warning(),
     }

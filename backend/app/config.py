@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     # pipeline to find out whether a verdict was about the evidence or about the ordering.
     adjudication_cross_check: bool = True
 
+    # Render the relation table as a node graph as well. Off by default; see
+    # graph_view_warning() for why.
+    enable_graph_view: bool = False
+
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     # ONNX threads for the embedding model. 0 chooses from the machine.
     embedding_threads: int = Field(default=0, ge=0, le=64)
@@ -148,6 +152,28 @@ class Settings(BaseSettings):
                 "in-flight requests a free key tends to reject rather than queue."
             )
         return warnings
+
+    def graph_view_warning(self) -> str | None:
+        """Why the graph view is off unless someone asks for it.
+
+        The brief this project answers says plainly that a graph database or a visualisation
+        is not the solution, and it is right: the work is in how facts are grounded,
+        normalised and compared, and a picture of the result can be mistaken for that work
+        having been done. The view is also, on this corpus, worse at its job than the table
+        it sits beside — a few hundred nodes laid out by force is a shape, and the question a
+        reviewer actually has is which two figures disagree and why.
+
+        It is built anyway because there is one thing it shows that a sorted table cannot:
+        which measures several publishers all describe, and whether the edges inside such a
+        cluster agree. So it ships switched off, and turning it on says out loud what it is.
+        """
+        if not self.enable_graph_view:
+            return None
+        return (
+            "ENABLE_GRAPH_VIEW is on. The graph is a rendering of the same relation rows the "
+            "table shows, not a separate store and not the reasoning — read it for clusters, "
+            "and use the table for verdicts and evidence."
+        )
 
     @property
     def resolved_parse_workers(self) -> int:

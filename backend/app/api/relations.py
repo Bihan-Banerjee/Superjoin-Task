@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.serializers import fact_summary, measure_summary, relation_summary
+from app.config import get_settings
 from app.db.engine import db_session
 from app.db.models import Document, Entity, Fact, Measure, Page, QualifierKey, Relation
 
@@ -30,6 +31,53 @@ def list_relations(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
+    statement = _filtered(
+        relation_type=relation_type,
+        dimension=dimension,
+        decided_by=decided_by,
+        document_id=document_id,
+        measure_id=measure_id,
+        cross_document=cross_document,
+        min_severity=min_severity,
+        min_confidence=min_confidence,
+    )
+
+    total = session.scalar(select(func.count()).select_from(statement.subquery()))
+
+    if sort == "severity":
+        statement = statement.order_by(Relation.severity.desc(), Relation.confidence.desc())
+    elif sort == "confidence":
+        statement = statement.order_by(Relation.confidence.desc())
+    else:
+        statement = statement.order_by(Relation.id.asc())
+
+    relations = list(session.scalars(statement.limit(limit).offset(offset)))
+    return {
+        "total": int(total or 0),
+        "limit": limit,
+        "offset": offset,
+        "relations": _render(session, relations),
+        "counts": _type_counts(session),
+    }
+
+
+def _filtered(
+    *,
+    relation_type: str | None = None,
+    dimension: str | None = None,
+    decided_by: str | None = None,
+    document_id: int | None = None,
+    measure_id: int | None = None,
+    cross_document: bool | None = None,
+    min_severity: float = 0.0,
+    min_confidence: float = 0.0,
+):
+    """The relation query both the table and the graph are built on.
+
+    Shared rather than duplicated so the two views cannot answer the same filters
+    differently — a graph that quietly disagrees with the table beside it would be worse
+    than no graph at all.
+    """
     statement = select(Relation)
 
     if relation_type:
@@ -52,23 +100,115 @@ def list_relations(
         statement = statement.where(
             or_(Relation.left_fact_id.in_(matching), Relation.right_fact_id.in_(matching))
         )
+    return statement
 
-    total = session.scalar(select(func.count()).select_from(statement.subquery()))
 
-    if sort == "severity":
-        statement = statement.order_by(Relation.severity.desc(), Relation.confidence.desc())
-    elif sort == "confidence":
-        statement = statement.order_by(Relation.confidence.desc())
-    else:
-        statement = statement.order_by(Relation.id.asc())
+# Declared before /relations/{relation_id} so "graph" is not parsed as a relation id.
+@router.get("/relations/graph")
+def relation_graph(
+    session: Session = Depends(db_session),
+    relation_type: str | None = None,
+    dimension: str | None = None,
+    decided_by: str | None = None,
+    document_id: int | None = None,
+    measure_id: int | None = None,
+    cross_document: bool | None = None,
+    min_severity: float = Query(default=0.0, ge=0.0, le=1.0),
+    limit: int = Query(default=300, ge=10, le=600),
+) -> dict[str, Any]:
+    """The same relation rows, projected as nodes and edges.
 
-    relations = list(session.scalars(statement.limit(limit).offset(offset)))
+    A projection and nothing more: no graph store, no separate ingest, no edge that is not
+    already a row in `relations`. It is off unless `ENABLE_GRAPH_VIEW` is set, and returns
+    404 when off rather than quietly serving data the deployment said it did not want.
+
+    Edges are taken in severity order so the cap keeps the disagreements rather than an
+    arbitrary slice, and only facts an edge actually touches become nodes — an isolated fact
+    has nothing to show here and thousands of them would bury what does.
+    """
+    settings = get_settings()
+    if not settings.enable_graph_view:
+        raise HTTPException(
+            status_code=404,
+            detail="the graph view is disabled; set ENABLE_GRAPH_VIEW=true to enable it",
+        )
+
+    statement = _filtered(
+        relation_type=relation_type,
+        dimension=dimension,
+        decided_by=decided_by,
+        document_id=document_id,
+        measure_id=measure_id,
+        cross_document=cross_document,
+        min_severity=min_severity,
+    )
+    total = int(session.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    relations = list(
+        session.scalars(
+            statement.order_by(Relation.severity.desc(), Relation.confidence.desc()).limit(limit)
+        )
+    )
+
+    fact_ids = {relation.left_fact_id for relation in relations} | {
+        relation.right_fact_id for relation in relations
+    }
+    facts = {
+        fact.id: fact
+        for fact in session.scalars(
+            select(Fact).options(selectinload(Fact.measure)).where(Fact.id.in_(fact_ids))
+        )
+    }
+    documents = {
+        document.id: document
+        for document in session.scalars(
+            select(Document).where(Document.id.in_({fact.document_id for fact in facts.values()}))
+        )
+    }
+
+    degree: dict[int, int] = {}
+    edges: list[dict[str, Any]] = []
+    for relation in relations:
+        if relation.left_fact_id not in facts or relation.right_fact_id not in facts:
+            continue
+        degree[relation.left_fact_id] = degree.get(relation.left_fact_id, 0) + 1
+        degree[relation.right_fact_id] = degree.get(relation.right_fact_id, 0) + 1
+        edges.append(
+            {
+                "id": relation.id,
+                "source": relation.left_fact_id,
+                "target": relation.right_fact_id,
+                "type": relation.relation_type,
+                "dimension": relation.dimension,
+                "cross_document": relation.cross_document,
+                "severity": round(relation.severity, 3),
+                "superseded_fact_id": (relation.raw or {}).get("superseded_fact_id"),
+            }
+        )
+
+    nodes = [
+        {
+            "id": fact.id,
+            "label": fact.predicate_surface or fact.subject_surface or fact.statement[:60],
+            "value_text": fact.value_text,
+            "period": fact.period_label,
+            "document_id": fact.document_id,
+            "measure_id": fact.measure_id,
+            "measure": fact.measure.name if fact.measure else None,
+            "degree": degree.get(fact.id, 0),
+        }
+        for fact in facts.values()
+        if degree.get(fact.id)
+    ]
+
     return {
-        "total": int(total or 0),
-        "limit": limit,
-        "offset": offset,
-        "relations": _render(session, relations),
-        "counts": _type_counts(session),
+        "nodes": nodes,
+        "edges": edges,
+        "total_relations": total,
+        "truncated": total > len(edges),
+        "documents": [
+            {"id": document.id, "title": document.title or document.filename}
+            for document in sorted(documents.values(), key=lambda item: item.id)
+        ],
     }
 
 
