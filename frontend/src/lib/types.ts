@@ -211,6 +211,38 @@ export interface Health {
   concurrency: number;
   rate_limit_rpm: number;
   throttle_warnings: string[];
+  graph_view_enabled: boolean;
+  graph_view_warning: string | null;
+}
+
+export interface GraphNode {
+  id: number;
+  label: string;
+  value_text: string | null;
+  period: string | null;
+  document_id: number;
+  measure_id: number | null;
+  measure: string | null;
+  degree: number;
+}
+
+export interface GraphEdge {
+  id: number;
+  source: number;
+  target: number;
+  type: RelationType;
+  dimension: string;
+  cross_document: boolean;
+  severity: number;
+  superseded_fact_id: number | null;
+}
+
+export interface RelationGraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  total_relations: number;
+  truncated: boolean;
+  documents: { id: number; title: string }[];
 }
 
 export interface Evaluation {

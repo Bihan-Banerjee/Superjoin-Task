@@ -43,6 +43,16 @@
   --reconcile-soft: #f8f0e2;
   --reconcile-border: #dfcaa4;
 
+  /* Categorical, for telling documents apart in the optional graph view. Chosen to stay
+     distinguishable beside each other at small sizes without any of them reading as the
+     corroborate/contradict/reconcile colours above, which carry meaning. */
+  --series-1: #3f6f97;
+  --series-2: #7a5c9e;
+  --series-3: #46806f;
+  --series-4: #9c6a35;
+  --series-5: #8a4f66;
+  --series-6: #5b6f3a;
+
   --neutral-chip: #eeece9;
   --neutral-chip-border: #d8d5d0;
 
@@ -106,6 +116,18 @@
     --reconcile: #d4ab6a;
     --reconcile-soft: #2a2113;
     --reconcile-border: #4c3d22;
+  --series-1: #85aecf;
+  --series-2: #b096d0;
+  --series-3: #7fbaa6;
+  --series-4: #d2a06a;
+  --series-5: #c48ba0;
+  --series-6: #9db473;
+    --series-1: #85aecf;
+    --series-2: #b096d0;
+    --series-3: #7fbaa6;
+    --series-4: #d2a06a;
+    --series-5: #c48ba0;
+    --series-6: #9db473;
 
     --neutral-chip: #24272a;
     --neutral-chip-border: #34383c;

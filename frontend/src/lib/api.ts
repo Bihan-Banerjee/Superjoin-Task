@@ -12,6 +12,7 @@ import type {
   QualifierKey,
   Rejection,
   Relation,
+  RelationGraphData,
 } from "./types";
 
 export class ApiError extends Error {
@@ -90,6 +91,8 @@ export const api = {
       counts: Record<string, number>;
     }>(`/api/relations${query(params)}`),
   getRelation: (id: number) => request<Relation>(`/api/relations/${id}`),
+  relationGraph: (params: Params = {}) =>
+    request<RelationGraphData>(`/api/relations/graph${query(params)}`),
 
   listMeasures: (params: Params = {}) =>
     request<{

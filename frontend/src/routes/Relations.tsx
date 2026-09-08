@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Suspense, lazy, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import RelationCard from "../components/RelationCard";
@@ -6,9 +7,19 @@ import { Empty, ErrorNote, Field, Loading, Pagination, Panel } from "../componen
 import { api } from "../lib/api";
 import { dimensionLabel, relationLabel, truncate } from "../lib/format";
 
+// Loaded only when someone opens the graph, so the layout library is a chunk the browser
+// never fetches on a deployment that leaves the view switched off.
+const RelationGraph = lazy(() => import("../components/RelationGraph"));
+
 const LIMIT = 20;
 
-const TYPES = ["corroborates", "contradicts", "reconciled_by_context", "refines"];
+const TYPES = [
+  "corroborates",
+  "contradicts",
+  "reconciled_by_context",
+  "refines",
+  "supersedes",
+];
 const DIMENSIONS = [
   "period",
   "unit_scale",
@@ -42,6 +53,11 @@ export default function Relations() {
   };
 
   const { data: documents } = useQuery({ queryKey: ["documents"], queryFn: api.listDocuments });
+  const { data: health } = useQuery({ queryKey: ["health"], queryFn: api.health });
+  const graphAvailable = Boolean(health?.graph_view_enabled);
+  const [asGraph, setAsGraph] = useState(false);
+  const [selectedRelationId, setSelectedRelationId] = useState<number | null>(null);
+  const showGraph = graphAvailable && asGraph;
 
   const filters = {
     relation_type: relationType,
@@ -57,6 +73,26 @@ export default function Relations() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["relations", filters],
     queryFn: () => api.listRelations(filters),
+  });
+
+  const graphFilters = {
+    relation_type: relationType,
+    dimension,
+    decided_by: decidedBy,
+    document_id: documentId,
+    cross_document: crossDocument,
+  };
+
+  const { data: graph, error: graphError } = useQuery({
+    queryKey: ["relation-graph", graphFilters],
+    queryFn: () => api.relationGraph(graphFilters),
+    enabled: showGraph,
+  });
+
+  const { data: selectedRelation } = useQuery({
+    queryKey: ["relation", selectedRelationId],
+    queryFn: () => api.getRelation(selectedRelationId as number),
+    enabled: showGraph && selectedRelationId !== null,
   });
 
   const relations = data?.relations ?? [];
@@ -154,6 +190,24 @@ export default function Relations() {
             </select>
           </Field>
           <div className="toolbar__spacer" />
+          {graphAvailable ? (
+            <div className="view-switch">
+              <button
+                type="button"
+                className={asGraph ? "btn btn--sm" : "btn btn--sm is-active"}
+                onClick={() => setAsGraph(false)}
+              >
+                Table
+              </button>
+              <button
+                type="button"
+                className={asGraph ? "btn btn--sm is-active" : "btn btn--sm"}
+                onClick={() => setAsGraph(true)}
+              >
+                Graph
+              </button>
+            </div>
+          ) : null}
           <button
             type="button"
             className="btn btn--sm btn--quiet"
@@ -163,18 +217,37 @@ export default function Relations() {
           </button>
         </div>
 
-        <div className="relation-list">
-          {isLoading ? <Loading label="Loading relations" /> : null}
-          {error ? <ErrorNote error={error} /> : null}
-          {!isLoading && !relations.length ? (
-            <Empty>No relations match these filters.</Empty>
-          ) : null}
-          {relations.map((relation) => (
-            <RelationCard key={relation.id} relation={relation} />
-          ))}
-        </div>
+        {showGraph ? (
+          <div className="relation-list">
+            {health?.graph_view_warning ? (
+              <p className="graph__notice">{health.graph_view_warning}</p>
+            ) : null}
+            {graphError ? <ErrorNote error={graphError} /> : null}
+            <Suspense fallback={<Loading label="Loading the graph" />}>
+              {graph ? (
+                <RelationGraph
+                  data={graph}
+                  selectedRelationId={selectedRelationId}
+                  onSelectRelation={setSelectedRelationId}
+                />
+              ) : null}
+            </Suspense>
+            {selectedRelation ? <RelationCard relation={selectedRelation} /> : null}
+          </div>
+        ) : (
+          <div className="relation-list">
+            {isLoading ? <Loading label="Loading relations" /> : null}
+            {error ? <ErrorNote error={error} /> : null}
+            {!isLoading && !relations.length ? (
+              <Empty>No relations match these filters.</Empty>
+            ) : null}
+            {relations.map((relation) => (
+              <RelationCard key={relation.id} relation={relation} />
+            ))}
+          </div>
+        )}
 
-        {data ? (
+        {data && !showGraph ? (
           <div className="panel__footer">
             <Pagination
               total={data.total}

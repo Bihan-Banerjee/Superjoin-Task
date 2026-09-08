@@ -690,3 +690,137 @@ table.data--compact tbody tr:last-child td {
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
+
+/* --- Optional relation graph -------------------------------------------------------- */
+
+.graph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.graph__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.graph__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.graph__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.graph__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.graph__canvas {
+  width: 100%;
+  height: 620px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  touch-action: none;
+  cursor: grab;
+}
+
+.graph__canvas:active {
+  cursor: grabbing;
+}
+
+.graph__edge {
+  stroke: var(--border-strong);
+  stroke-width: 1.2;
+  fill: none;
+}
+
+.graph__edge--corroborates {
+  stroke: var(--corroborate);
+}
+
+.graph__edge--contradicts {
+  stroke: var(--contradict);
+  stroke-width: 1.8;
+}
+
+.graph__edge--reconciled_by_context,
+.graph__edge--refines,
+.graph__edge--supersedes {
+  stroke: var(--reconcile);
+}
+
+/* Widened only for pointer accuracy — a 1px line is almost impossible to click. */
+.graph__canvas line.graph__edge {
+  stroke-linecap: round;
+  cursor: pointer;
+}
+
+.graph__edge--selected {
+  stroke: var(--accent);
+  stroke-width: 2.6;
+}
+
+.graph__edge--dimmed {
+  opacity: 0.12;
+}
+
+.graph__arrow {
+  fill: var(--reconcile);
+}
+
+.graph__node circle {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.graph__node--dimmed {
+  opacity: 0.15;
+}
+
+.graph__label {
+  font-size: 9px;
+  fill: var(--text-muted);
+  pointer-events: none;
+}
+
+.graph__footnote {
+  margin: 0;
+}
+
+.graph__notice {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--reconcile);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.view-switch {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.view-switch .btn.is-active {
+  border-color: var(--border-strong);
+  background: var(--surface-inset);
+  color: var(--text);
+  font-weight: 500;
+}
