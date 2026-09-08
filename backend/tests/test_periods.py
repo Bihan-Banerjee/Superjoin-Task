@@ -104,3 +104,50 @@ def test_unparseable_label_is_reported_as_unresolved_not_guessed():
 def test_convention_inferred_from_document_language():
     assert infer_convention("figures in ₹ crore for the year ended March 31, 2024") == INDIA
     assert infer_convention("results for the twelve months to December") == CALENDAR
+
+
+def test_a_day_is_never_read_as_a_year():
+    """The regression that made different years look like the same period.
+
+    "December 31, 2021" was matched by the month-and-year rule, which took the first number
+    after the month — the day — and expanded 31 into 2031. Every label of that shape landed
+    on the same invented month, so figures from different years compared as though they
+    covered identical periods and were reported as contradicting each other.
+    """
+    parsed = parse_period("December 31, 2021", INDIA)
+    assert parsed.kind == POINT
+    assert parsed.start == date(2021, 12, 31)
+
+
+def test_period_is_optional_filler_between_the_span_and_ended():
+    """Filings write it both ways and mean the same nine months by either."""
+    with_filler = parse_period("nine months period ended December 31, 2020", INDIA)
+    without = parse_period("nine months ended December 31, 2020", INDIA)
+
+    assert with_filler.start == without.start == date(2020, 4, 1)
+    assert with_filler.end == without.end == date(2020, 12, 31)
+
+
+def test_a_hyphenated_span_reads_the_same_as_a_spaced_one():
+    parsed = parse_period("nine-month period ended December 31, 2020", INDIA)
+    assert parsed.start == date(2020, 4, 1)
+    assert parsed.end == date(2020, 12, 31)
+
+
+def test_twelve_months_period_ended_is_a_fiscal_year():
+    parsed = parse_period("twelve months period ended March 31, 2024", INDIA)
+    assert parsed.kind == FISCAL_YEAR
+    assert (parsed.start, parsed.end) == (date(2023, 4, 1), date(2024, 3, 31))
+
+
+def test_the_same_nine_months_of_different_years_do_not_overlap():
+    """The pair that was being reported as a contradiction in the ingested corpus."""
+    earlier = parse_period("nine months period ended December 31, 2020", INDIA)
+    later = parse_period("nine months period ended December 31, 2021", INDIA)
+    assert relate(earlier, later) == OVERLAP_DISJOINT
+
+
+def test_a_month_and_year_without_a_day_still_reads_as_that_month():
+    for label, expected in (("December 2021", date(2021, 12, 1)), ("Dec 24", date(2024, 12, 1))):
+        parsed = parse_period(label, INDIA)
+        assert parsed.start == expected, label

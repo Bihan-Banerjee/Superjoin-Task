@@ -216,14 +216,23 @@ _FISCAL_SINGLE_PATTERN = re.compile(
 
 _BARE_SPAN_PATTERN = re.compile(r"\b(?P<y1>(?:19|20)\d{2})\s*[-/]\s*(?P<y2>\d{2}|\d{4})\b")
 
+# "period" between the span and "ended" is filler. Filings write both "nine months ended
+# December 31, 2021" and "nine months period ended December 31, 2021" and mean the same nine
+# months by either. Without this the second form fell past this matcher to the month matcher,
+# which read the day as a year — see _MONTH_YEAR_PATTERN below.
+_SPAN_ENDED = r"(?:\s+period)?\s+ended\s+(?:on\s+)?"
+
 _YEAR_ENDED_PATTERN = re.compile(
-    r"\b(?:year|twelve\s+months|12\s+months)\s+ended\s+(?:on\s+)?"
-    r"(?P<rest>[A-Za-z0-9,\s]{6,30})",
+    r"\b(?:year|twelve[\s-]+months?|12[\s-]+months?)"
+    + _SPAN_ENDED
+    + r"(?P<rest>[A-Za-z0-9,\s]{6,30})",
     re.IGNORECASE,
 )
 
 _PERIOD_ENDED_PATTERN = re.compile(
-    r"\b(?P<count>three|six|nine|3|6|9)\s+months\s+ended\s+(?:on\s+)?(?P<rest>[A-Za-z0-9,\s]{6,30})",
+    r"\b(?P<count>three|six|nine|3|6|9)[\s-]+months?"
+    + _SPAN_ENDED
+    + r"(?P<rest>[A-Za-z0-9,\s]{6,30})",
     re.IGNORECASE,
 )
 
@@ -244,10 +253,19 @@ _CALENDAR_YEAR_PATTERN = re.compile(
 
 _BARE_YEAR_PATTERN = re.compile(r"\b(?P<y>(?:19|20)\d{2})\b")
 
+# A month beside its year: "December 2021", "Dec 24".
+#
+# The trailing guard is what stops a *day* being read as a year. In "December 31, 2021" the
+# first number after the month is 31, and without the guard this matched it and returned
+# December 2031 — a period no document mentions, which every other such label also collapsed
+# onto, so facts from different years compared as though they covered the same months and
+# were reported as contradicting each other. Refusing the match when a further number follows
+# leaves those labels to the date matchers, which read them correctly as a single day.
 _MONTH_YEAR_PATTERN = re.compile(
     r"\b(?P<month>jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?"
     r"|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
-    r"\s*[-,\s]\s*(?P<y>(?:19|20)?\d{2})\b",
+    r"\s*[-,\s]\s*(?P<y>(?:19|20)\d{2}|\d{2})\b"
+    r"(?!\s*(?:st|nd|rd|th)?\s*,?\s*\d)",
     re.IGNORECASE,
 )
 
