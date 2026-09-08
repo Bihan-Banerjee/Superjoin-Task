@@ -172,6 +172,15 @@ _FACT_SCHEMA: dict[str, Any] = {
             },
         },
         "basis": {"type": "string", "enum": BASIS_VALUES},
+        "attribution": {
+            "type": "string",
+            "description": (
+                "Only when a value was attached to its series or category by reading the "
+                "attached image rather than the text: say what in the image established it, "
+                "e.g. 'segment colour matches the legend entry for Express Parcel'. Leave "
+                "empty whenever the text alone was enough."
+            ),
+        },
         "evidence_quote": {
             "type": "string",
             "description": (

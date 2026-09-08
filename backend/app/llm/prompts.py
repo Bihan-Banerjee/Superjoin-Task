@@ -120,6 +120,8 @@ def extract_prompt(
 ) -> str:
     label = f" (printed page {printed_label})" if printed_label else ""
     guidance = _PAGE_GUIDANCE.get(page_type, "")
+    if has_image:
+        guidance = f"{guidance}{_VISION_GUIDANCE.get(page_type, '')}"
     image_note = (
         "\nA rendered image of this page is attached. Use it to resolve which value belongs "
         "to which series or label. The text below is still the authority for exact "
@@ -168,11 +170,44 @@ This page is mostly tabular. Detected tables appear at the end as pipe-delimited
 Read the column headers before the numbers. A column headed with a year, a quarter, "Est." \
 or "Proj." changes the period and the basis of every value beneath it. Row labels indented \
 under a heading inherit that heading as part of their measure.
+
+A wide table is followed by a "cells" list writing each figure out beside its own row label \
+and column heading. That list is there to settle which heading a figure sits under, and \
+nothing more. Take evidence_quote from the table rows or the page's prose, never from the \
+cells list: those lines are assembled for you and do not appear on the page, so quoting one \
+loses the fact.
 """,
     "mixed": """\
 This page mixes prose with figures. Figures embedded in a sentence usually take their \
 period and scope from that sentence rather than from a heading.
 """,
+}
+
+
+# Added only when an image of the page is attached. Kept separate from the page guidance
+# because it licenses something the text-only instructions forbid: attaching a value to a
+# series on evidence that is not in the text layer at all. That licence is worth granting
+# for stacked charts, where the colour of a segment is the only thing that says which
+# series it belongs to and a text-only reader has no way in. It is worth granting *only*
+# with the image present, and only against a written account of what was matched, because
+# the resulting claim is the one thing here no later check can verify against the page.
+_VISION_GUIDANCE = {
+    "chart_slide": """\
+The image lets you settle attributions the text cannot. A stacked bar's segments carry no \
+label in the text layer, and their order in the extracted text is the order they happened \
+to be drawn, not the order of the legend.
+
+Where a segment's colour matches a legend swatch, you may attach the value to that series \
+and record the match in "attribution". Say what you matched, so a reader can check it \
+against the image. Do the same for a value you placed by position — which chart on the \
+page it sits in, which axis category it stands over.
+
+This licence is narrow. Read the value itself from the text; the image is for deciding what \
+the value belongs to. Where two segments are close in colour, where the legend has more \
+entries than the bar has segments, or where the rendering is too small to be sure, the \
+answer is still "unattributed" — a value filed under the wrong series is worse than one \
+filed under none, because nothing downstream can tell that it is wrong.
+"""
 }
 
 

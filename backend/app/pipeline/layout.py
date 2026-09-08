@@ -16,6 +16,7 @@ asked to read a page rather than to guess at a bag of tokens.
 
 from __future__ import annotations
 
+import re
 import statistics
 from dataclasses import dataclass, field
 from typing import Any
@@ -229,19 +230,123 @@ def _assign_to_columns(words: list[Word], columns: list[tuple[float, float]]) ->
     return buckets
 
 
+# A cell that is a figure rather than a label. Deliberately permissive about what may
+# surround the digits — currency marks, percent signs, accounting parentheses, footnote
+# daggers — because the question here is only "is this column data or heading".
+_NUMERIC_CELL = re.compile(r"^[^\w]*[-+(]?\s*[\d.,]*\d[\d.,]*\s*\)?\s*[^\w]*$")
+
+# Header rows to consider before giving up. Financial tables stack two or three — a span of
+# years over a row of "Actual / Est. / Proj." — and beyond that the run of label-only rows
+# is far more likely to be a stub column than a header.
+_MAX_HEADER_ROWS = 3
+
+# Below this many data columns a model reliably tracks which figure sits under which
+# heading from the grid alone, and spelling every cell out is a waste of context.
+_WIDE_TABLE_COLUMNS = 3
+
+# Ceiling on spelled-out cells for one table, so a long statement of accounts cannot
+# crowd out the rest of the page.
+_MAX_ADDRESSED_CELLS = 200
+
+
 def _render_tables(tables: list[Table]) -> list[str]:
-    """Serialise detected tables as pipe-delimited rows.
+    """Serialise detected tables as pipe-delimited rows, then address their cells.
 
     Markdown alignment rows are omitted deliberately: they cost tokens on wide financial
     tables and add nothing a model needs to read the grid.
+
+    The grid alone is not enough on a wide table. A figure in the fourth of six columns is
+    only meaningful once it is joined to a heading that may be three rows above it, and
+    that join is exactly what goes wrong — a value read off the "2024/25 Est." column and
+    filed under "2023/24" is a well-formed fact that happens to be false, which is the
+    worst kind for a system like this to produce. So each numeric cell of a wide table is
+    also written out beside its own row label and column heading, where the pairing cannot
+    come apart. The grid stays too; nothing is taken away, and a model that prefers to read
+    the layout still can.
     """
     rendered: list[str] = []
     for index, table in enumerate(tables, start=1):
         lines = [f"[table {index}]"]
         for row in table.rows:
             lines.append(" | ".join(cell if cell else "-" for cell in row))
+
+        addressed = _address_cells(table)
+        if addressed:
+            lines.append(f"[table {index} cells]")
+            lines.extend(addressed)
         rendered.append("\n".join(lines))
     return rendered
+
+
+def _address_cells(table: Table) -> list[str]:
+    """Every numeric cell of a wide table written as `row label | column heading = value`."""
+    header_depth = _header_depth(table.rows)
+    if not header_depth:
+        return []
+
+    headers = _column_headers(table.rows[:header_depth], table.column_count)
+    # Column zero carries the row labels, so it is not one of the data columns being
+    # counted, and a table narrow enough to read straight off the grid is left alone.
+    if sum(1 for header in headers[1:] if header) < _WIDE_TABLE_COLUMNS:
+        return []
+
+    addressed: list[str] = []
+    for row in table.rows[header_depth:]:
+        label = (row[0] if row else "").strip()
+        # A row whose stub cell is blank is a spacer, a wrapped label or a continuation.
+        # Inheriting the previous row's label would attach figures to the wrong line item,
+        # so these keep their grid row and nothing more.
+        if not label or _is_numeric_cell(label):
+            continue
+        for column, cell in enumerate(row[1:], start=1):
+            value = (cell or "").strip()
+            if not value or not _is_numeric_cell(value):
+                continue
+            header = headers[column] if column < len(headers) else ""
+            addressed.append(f"{label} | {header} = {value}" if header else f"{label} = {value}")
+            if len(addressed) >= _MAX_ADDRESSED_CELLS:
+                return addressed
+    return addressed
+
+
+def _header_depth(rows: list[list[str]]) -> int:
+    """How many leading rows are heading rather than data."""
+    depth = 0
+    for row in rows[:_MAX_HEADER_ROWS]:
+        filled = [cell.strip() for cell in row if cell and cell.strip()]
+        if len(filled) < 2 or any(_is_numeric_cell(cell) for cell in filled):
+            break
+        depth += 1
+    # A table that is entirely headings was misdetected; treating all of it as a header
+    # would address no cells anyway, but returning 0 says so plainly.
+    return depth if depth < len(rows) else 0
+
+
+def _column_headers(header_rows: list[list[str]], width: int) -> list[str]:
+    """Collapse stacked heading rows into one heading per column.
+
+    A year on one row above a basis on the next is a single heading split across two lines,
+    and it is the whole heading that changes what the figures below it mean.
+    """
+    headers: list[str] = []
+    for column in range(width):
+        parts: list[str] = []
+        for row in header_rows:
+            cell = (row[column] if column < len(row) else "") or ""
+            cell = cell.strip()
+            if cell and cell not in parts:
+                parts.append(cell)
+        headers.append(" ".join(parts))
+    return headers
+
+
+def _is_numeric_cell(cell: str) -> bool:
+    text = (cell or "").strip()
+    return (
+        bool(text)
+        and bool(_NUMERIC_CELL.match(text))
+        and any(character.isdigit() for character in text)
+    )
 
 
 def _spans_columns(line: Line, columns: list[tuple[float, float]], gutter: float) -> bool:
