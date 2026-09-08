@@ -120,6 +120,15 @@ class Document(Base):
     reporting_basis: Mapped[str | None] = mapped_column(String(64))
     language: Mapped[str | None] = mapped_column(String(16))
 
+    # How much of this document's substantive text had already been ingested when it
+    # arrived, and which document held it. An identical file is refused at upload on its
+    # sha256; this catches the same content arriving as a different file — a re-export, a
+    # re-download, an excerpt of something already here — which no file hash can see.
+    near_duplicate_of: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL")
+    )
+    content_overlap: Mapped[float | None] = mapped_column(Float)
+
     status: Mapped[str] = mapped_column(String(32), default=DOC_STATUS_PENDING, index=True)
     error: Mapped[str | None] = mapped_column(Text)
     profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

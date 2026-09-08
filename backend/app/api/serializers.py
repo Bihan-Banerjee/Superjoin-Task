@@ -34,6 +34,8 @@ def document_summary(document: Document, counts: dict[str, int] | None = None) -
         "status": document.status,
         "error": document.error,
         "sha256": document.sha256,
+        "near_duplicate_of": document.near_duplicate_of,
+        "content_overlap": document.content_overlap,
         "created_at": document.created_at.isoformat() if document.created_at else None,
         "fact_count": counts.get("facts", 0),
         "relation_count": counts.get("relations", 0),
@@ -144,6 +146,9 @@ def relation_summary(
         "delta_relative": relation.delta_relative,
         "cross_document": relation.cross_document,
         "similarity": relation.similarity,
+        "superseded_fact_id": (relation.raw or {}).get("superseded_fact_id"),
+        "order_sensitive": bool((relation.raw or {}).get("order_sensitive")),
+        "reverse_relation_type": (relation.raw or {}).get("reverse_relation_type"),
         "left": left,
         "right": right,
     }

@@ -377,9 +377,7 @@ _VAGUE_SUBJECTS = {
 }
 
 
-def _value_supported(
-    candidate: dict[str, Any], page_text: str, start: int, end: int
-) -> bool:
+def _value_supported(candidate: dict[str, Any], page_text: str, start: int, end: int) -> bool:
     """Check the value appears in the *source page*, inside the span the quote matched.
 
     Checked against the page and never against the model's own quote. A quote is a claim

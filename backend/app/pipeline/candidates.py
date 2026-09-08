@@ -97,8 +97,7 @@ def _drop_same_page(session: Session, pairs: list[Pair]) -> list[Pair]:
     return [
         pair
         for pair in pairs
-        if location.get(pair.left_id) != location.get(pair.right_id)
-        or pair.left_id not in location
+        if location.get(pair.left_id) != location.get(pair.right_id) or pair.left_id not in location
     ]
 
 

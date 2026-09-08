@@ -50,6 +50,7 @@ from app.pipeline import candidates as candidate_stage
 from app.pipeline import extract as extract_stage
 from app.pipeline.adjudicate import (
     AdjudicationRequest,
+    CrossCheckStats,
     adjudicate_all,
     load_adjudication_context,
 )
@@ -93,6 +94,7 @@ class IngestStats:
     rejections: int = 0
     relations_created: int = 0
     adjudicated: int = 0
+    cross_check: dict[str, Any] = field(default_factory=dict)
     registry: dict[str, Any] = field(default_factory=dict)
     usage: dict[str, Any] = field(default_factory=dict)
 
@@ -111,6 +113,7 @@ class IngestStats:
             "rejections": self.rejections,
             "relations_created": self.relations_created,
             "adjudicated_by_model": self.adjudicated,
+            "adjudication_cross_check": self.cross_check,
             "registry": self.registry,
             "usage": self.usage,
         }
@@ -258,7 +261,7 @@ async def _run(
 
     # --- link ----------------------------------------------------------------------
     reporter.stage("linking", "comparing against the existing corpus")
-    await _link(document_id, new_fact_ids, client, stats, reporter)
+    await _link(document_id, new_fact_ids, client, stats, reporter, settings)
 
     stats.usage = client.ledger.summary()
     _finish(document_id, job_id, client, stats)
@@ -295,6 +298,74 @@ def _store_pages(
                     layout={"reason": signal.reason, "metrics": signal.metrics},
                 )
             )
+        session.flush()
+        _record_content_overlap(session, document_id)
+
+
+# Pages shorter than this are dropped before the overlap is measured. A cover sheet, a
+# divider or a page of nothing but a running head is identical across unrelated documents
+# from the same publisher, and counting those would report every filing as a near-duplicate
+# of every other.
+_OVERLAP_MINIMUM_PAGE_CHARS = 400
+
+
+def _record_content_overlap(session: Session, document_id: int) -> None:
+    """How much of this document was already in the layer, and where.
+
+    Upload refuses a byte-identical file on its sha256, which catches the same file twice
+    and nothing else. The same content routinely arrives as a different file: a PDF
+    re-exported by a different tool, a report re-downloaded after a cosmetic revision, an
+    excerpt of something already ingested. Page text hashes catch those, because the words
+    on the page do not change when the file around them does.
+
+    Measured as containment — how much of the *new* document is already present — rather
+    than as a symmetric overlap. The question being asked is "have I seen this before", and
+    a ten-page excerpt of a hundred-page filing is entirely contained in it while sharing
+    only a tenth of its pages.
+
+    Nothing is skipped on the strength of this. A revised filing shares most of its pages
+    with the version it replaces, and the handful that changed are the reason to ingest it.
+    Re-reading the shared pages is nearly free in any case: the response cache is keyed on
+    prompt content, so a page whose text is unchanged is served from disk rather than
+    re-extracted.
+    """
+    mine = {
+        sha
+        for sha, chars in session.execute(
+            select(Page.text_sha, Page.char_count).where(Page.document_id == document_id)
+        )
+        if chars >= _OVERLAP_MINIMUM_PAGE_CHARS
+    }
+    if not mine:
+        return
+
+    counts: dict[int, int] = {}
+    rows = session.execute(
+        select(Page.document_id, Page.text_sha)
+        .where(Page.document_id != document_id)
+        .where(Page.text_sha.in_(mine))
+        .where(Page.char_count >= _OVERLAP_MINIMUM_PAGE_CHARS)
+        .distinct()
+    )
+    for other_id, _ in rows:
+        counts[other_id] = counts.get(other_id, 0) + 1
+    if not counts:
+        return
+
+    best_id, shared = max(counts.items(), key=lambda item: item[1])
+    overlap = shared / len(mine)
+    document = session.get(Document, document_id)
+    if document is None:
+        return
+    document.content_overlap = round(overlap, 4)
+    document.near_duplicate_of = best_id if overlap >= get_settings().near_duplicate_ratio else None
+    if document.near_duplicate_of is not None:
+        logger.warning(
+            "document %d repeats %.0f%% of document %d's pages",
+            document_id,
+            overlap * 100,
+            best_id,
+        )
 
 
 def _store_profile(
@@ -521,6 +592,7 @@ async def _link(
     client: LlmClient,
     stats: IngestStats,
     reporter: ProgressReporter,
+    settings: Settings,
 ) -> None:
     if not fact_ids:
         return
@@ -568,6 +640,7 @@ async def _link(
         with session_scope() as session:
             context = load_adjudication_context(session, escalations)
 
+        cross_check = CrossCheckStats()
         verdicts = await adjudicate_all(
             client,
             escalations,
@@ -575,8 +648,12 @@ async def _link(
             on_progress=lambda done, total: reporter.within(
                 "linking", done, total, f"adjudicated {done} of {total} ambiguous pairs"
             ),
+            cross_check=settings.adjudication_cross_check,
+            stats=cross_check,
         )
         stats.adjudicated = len(verdicts)
+        if cross_check.checked:
+            stats.cross_check = cross_check.as_dict()
 
     with session_scope() as session:
         for left_id, right_id, verdict, similarity in settled:
@@ -601,6 +678,22 @@ def _is_informative(verdict: Verdict, left: Fact, right: Fact) -> bool:
     if left.document_id != right.document_id:
         return True
     return not (verdict.relation_type == REL_RECONCILED and verdict.dimension == DIM_PERIOD)
+
+
+def _relation_detail(verdict: Verdict) -> dict[str, Any]:
+    """The parts of a verdict that do not fit a column.
+
+    Kept sparse on purpose: an empty dict for the ordinary case rather than a row of nulls,
+    so what is present in `raw` is always something worth reading.
+    """
+    detail: dict[str, Any] = {}
+    if verdict.superseded_fact_id is not None:
+        detail["superseded_fact_id"] = verdict.superseded_fact_id
+    if verdict.order_sensitive:
+        detail["order_sensitive"] = True
+        if verdict.reverse_relation_type:
+            detail["reverse_relation_type"] = verdict.reverse_relation_type
+    return detail
 
 
 def _store_relation(
@@ -635,6 +728,7 @@ def _store_relation(
         "delta_relative": verdict.delta_relative,
         "cross_document": left.document_id != right.document_id,
         "similarity": similarity or None,
+        "raw": _relation_detail(verdict),
     }
 
     if existing is not None:

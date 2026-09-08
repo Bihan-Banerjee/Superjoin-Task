@@ -524,3 +524,66 @@ class TestEntityMerging:
 
         assert not _same_organisation("Delhivery Limited", "Delhivery Corp Limited, United Kingdom")
         assert not _same_organisation("Delhivery Limited", "Delhivery USA Inc")
+
+
+class TestNearDuplicateDetection:
+    """The same content arriving as a different file.
+
+    Upload refuses a byte-identical PDF on its sha256. That catches re-uploading the same
+    file and nothing else — a re-export, a re-download after a cosmetic change, or an
+    excerpt of something already ingested all produce different bytes and identical words.
+    """
+
+    @pytest.fixture(scope="class")
+    async def corpus(self, workspace: Path, settings, database, stub):
+        await ingest(
+            build_pdf(workspace / "original.pdf", FILING_PAGES),
+            settings,
+            stub,
+            FILING_PROFILE,
+            FILING_FACTS,
+        )
+        # Same words, different file. A hash of the bytes cannot see the relationship.
+        await ingest(
+            build_pdf(workspace / "re-export.pdf", FILING_PAGES),
+            settings,
+            stub,
+            FILING_PROFILE,
+            FILING_FACTS,
+        )
+        await ingest(
+            build_pdf(workspace / "unrelated.pdf", DECK_PAGES),
+            settings,
+            stub,
+            DECK_PROFILE,
+            DECK_FACTS,
+        )
+
+    def test_a_re_export_is_flagged_against_the_document_it_repeats(self, corpus):
+        with session_scope() as session:
+            original = session.scalar(select(Document).where(Document.filename == "original.pdf"))
+            copy = session.scalar(select(Document).where(Document.filename == "re-export.pdf"))
+
+            assert original.sha256 != copy.sha256, (
+                "the two files must differ, or this proves nothing"
+            )
+            assert copy.near_duplicate_of == original.id
+            assert copy.content_overlap == 1.0
+
+    def test_the_first_document_is_not_flagged_against_the_copy_that_followed_it(self, corpus):
+        """Flagging is about what was already in the layer, so it points backwards only."""
+        with session_scope() as session:
+            original = session.scalar(select(Document).where(Document.filename == "original.pdf"))
+            assert original.near_duplicate_of is None
+
+    def test_an_unrelated_document_is_left_alone(self, corpus):
+        with session_scope() as session:
+            unrelated = session.scalar(select(Document).where(Document.filename == "unrelated.pdf"))
+            assert unrelated.near_duplicate_of is None
+
+    def test_the_copy_is_still_ingested_rather_than_skipped(self, corpus):
+        """Detection reports; it does not decide. A revised filing shares most of its pages
+        with the version it replaces, and the few that changed are the reason to read it."""
+        with session_scope() as session:
+            copy = session.scalar(select(Document).where(Document.filename == "re-export.pdf"))
+            assert session.query(Fact).filter(Fact.document_id == copy.id).count() > 0

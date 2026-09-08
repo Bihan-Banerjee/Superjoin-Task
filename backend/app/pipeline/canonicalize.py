@@ -209,9 +209,7 @@ class MeasureRegistry:
             resolved.update(await self._resolve_with_model(ambiguous, client))
         return resolved
 
-    def _nearest(
-        self, query: np.ndarray, unit_class: str | None
-    ) -> tuple[Measure | None, float]:
+    def _nearest(self, query: np.ndarray, unit_class: str | None) -> tuple[Measure | None, float]:
         """Closest registered measure of a compatible unit class."""
         eligible = [
             index

@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     enable_vision: bool = True
     vision_render_dpi: int = Field(default=140, ge=72, le=400)
 
+    # Share of a new document's substantive pages that must already be in the layer before
+    # it is flagged as repeating another document. High on purpose: an annual report and
+    # its successor share a great deal of boilerplate without one being a copy of the other,
+    # and a false flag on a genuinely new filing is more costly than a missed duplicate.
+    near_duplicate_ratio: float = Field(default=0.9, ge=0.0, le=1.0)
+
+    # Adjudicate each escalated pair a second time with the two facts swapped, and keep the
+    # answer only if it survives the swap. Doubles the cost of the smallest stage in the
+    # pipeline to find out whether a verdict was about the evidence or about the ordering.
+    adjudication_cross_check: bool = True
+
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     # ONNX threads for the embedding model. 0 chooses from the machine.
     embedding_threads: int = Field(default=0, ge=0, le=64)

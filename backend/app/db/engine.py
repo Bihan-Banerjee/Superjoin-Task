@@ -7,6 +7,7 @@ concurrent writers need care, which is what the pragmas below are for.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -17,6 +18,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 from app.db.models import Base
+
+logger = logging.getLogger(__name__)
 
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
@@ -138,9 +141,43 @@ _FTS_SETUP = (
 def init_database(engine: Engine | None = None) -> None:
     engine = engine or get_engine()
     Base.metadata.create_all(engine)
+    add_missing_columns(engine)
     with engine.begin() as connection:
         for statement in _FTS_SETUP:
             connection.execute(text(statement))
+
+
+def add_missing_columns(engine: Engine | None = None) -> None:
+    """Bring an existing database up to the current models, additively.
+
+    `create_all` creates tables it cannot find and then leaves them alone, so a column added
+    to a model after a corpus has been ingested is invisible until the database is thrown
+    away and rebuilt. Throwing it away costs a full re-ingest, which is the one operation
+    here that costs real money, so the column is added in place instead.
+
+    Deliberately additive only. Nothing is dropped, renamed or retyped: those need a
+    decision about existing rows that a function running silently at startup has no business
+    making. A column removed from a model simply stays in the table, unread.
+    """
+    engine = engine or get_engine()
+    with engine.begin() as connection:
+        for table in Base.metadata.sorted_tables:
+            rows = connection.execute(text(f"PRAGMA table_info('{table.name}')")).fetchall()
+            if not rows:
+                continue
+            present = {row[1] for row in rows}
+            for column in table.columns:
+                if column.name in present:
+                    continue
+                declaration = column.type.compile(engine.dialect)
+                # A NOT NULL column cannot be added to a table with rows in it unless it
+                # brings a default, and SQLite will not take a non-constant one. Existing
+                # rows predate the column and have nothing to say about it, so it is added
+                # nullable and left to the application to populate.
+                connection.execute(
+                    text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {declaration}')
+                )
+                logger.info("added column %s.%s to the existing database", table.name, column.name)
 
 
 def rebuild_fts(engine: Engine | None = None) -> None:
