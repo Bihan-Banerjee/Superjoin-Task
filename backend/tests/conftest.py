@@ -20,6 +20,27 @@ from app.db.engine import init_database
 from app.llm.base import LlmError, LlmRequest, LlmResponse, Provider
 
 
+@pytest.fixture(scope="session", autouse=True)
+def ignore_developer_env() -> Any:
+    """Keep the developer's own `.env` out of the test run.
+
+    `Settings` reads `.env` for anything not passed explicitly, so a test that constructs
+    `Settings(llm_provider="stub")` still inherits every other field from whatever the
+    machine happens to have configured. That is not a hypothetical: setting a real fallback
+    provider locally made the quota circuit-breaker test attempt a live API call and fail,
+    because the code under test correctly fell back to a provider the test never asked for.
+
+    Tests should exercise declared configuration and nothing else, so the env file is
+    detached for the session and restored afterwards.
+    """
+    original = Settings.model_config.get("env_file")
+    Settings.model_config["env_file"] = None
+    reset_settings_cache()
+    yield
+    Settings.model_config["env_file"] = original
+    reset_settings_cache()
+
+
 class StubProvider(Provider):
     """Serves canned responses keyed by a marker in the prompt.
 

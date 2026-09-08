@@ -156,6 +156,8 @@ class TestQuotaCircuitBreaker:
         provider = AlwaysOutOfQuota()
         settings = Settings(
             llm_provider="spent",
+            # Explicit: this is about one model giving up, not about failing over to another.
+            llm_fallback_provider="",
             llm_cache_enabled=False,
             llm_rate_limit_rpm=0,
             llm_max_attempts=2,
