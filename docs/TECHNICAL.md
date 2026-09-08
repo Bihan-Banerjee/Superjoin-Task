@@ -616,6 +616,7 @@ GET    /api/facts/{id}                           fact, evidence, and every relat
 GET    /api/relations                            filter by type, dimension, decided_by,
                                                  document, severity, cross-document
 GET    /api/relations/{id}
+GET    /api/relations/graph                      nodes and edges; 404 unless ENABLE_GRAPH_VIEW
 
 GET    /api/measures                             the registry
 GET    /api/entities
@@ -649,6 +650,45 @@ Six views: **Documents** (upload, streaming progress, per-document counts), **Fa
 (filterable table with an evidence panel), **Relations** (both facts side by side with the
 differing fields marked), **Cases** (the four required cases), **Registry** (measures,
 entities, qualifier keys), **Evaluation** (metrics from the last run).
+
+### The graph view, and why it ships switched off
+
+`ENABLE_GRAPH_VIEW=true` adds a second rendering of the Relations page: facts as nodes,
+relations as edges, coloured by document and by verdict.
+
+It is off by default and that is the substantive decision, not an oversight. The brief this
+project answers says plainly that a graph database or a visualisation is not the solution,
+and it is right — the work is in how facts are grounded, normalised and compared, and a
+picture of the result is easily mistaken for that work having been done. On this corpus the
+graph is also simply worse at the job: a few hundred nodes laid out by force is a shape, and
+the question a reviewer has is which two figures disagree and why, which the table answers
+exactly and the graph answers approximately.
+
+It exists because there is one thing it shows that a sorted table cannot: which measures
+several publishers all describe, and whether the edges inside such a cluster agree with each
+other. A tight cluster of green with one red edge through it is a real finding, and it is
+genuinely hard to see in a list.
+
+So it is built, tested, and switched off, and turning it on says out loud what it is — a
+line in the server log at startup and a note above the graph itself.
+
+Four properties keep it honest:
+
+- **It is a projection, not a store.** `GET /api/relations/graph` reads the same `relations`
+  rows through the same filter builder the table uses, so the two cannot drift. There is no
+  graph database, no second ingest, and no edge that is not a row.
+- **It is not shipped when it is off.** The endpoint returns 404 rather than quietly serving
+  data the deployment declined, and the layout code is a lazily imported chunk — 19.6 kB, 7.7
+  kB gzipped — that the browser never fetches. Enabling the view costs 2.2 kB in the main
+  bundle for the toggle.
+- **Truncation keeps the disagreements.** Edges are taken in severity order, so a capped
+  graph loses the least interesting relations rather than an arbitrary slice, and the footer
+  says how many were left out.
+- **Isolated facts are not drawn.** A fact no relation touches has nothing to show here, and
+  the thousands of them would bury what does.
+
+Clicking an edge opens the same relation card the table shows, with both quotes and the
+reasoning. The graph is a way into the evidence, never a substitute for it.
 
 **Page rendering is server-side.** pdf.js was the obvious choice and was dropped. Rendering
 with PyMuPDF costs a round trip and buys three things: the highlight rectangles are in the
@@ -691,6 +731,41 @@ Those tests found four defects that would all have failed on the first live run:
 
 Plus the SQLite writer deadlock described under [Performance](#performance).
 
+### A day read as a year
+
+The worst defect so far was not found by a test. It was found by clicking an edge in the
+graph view and reading the pair it opened.
+
+Two facts from the Delhivery prospectus were being reported as contradicting: investments in
+technology of ₹2,418.03 million and ₹1,288.17 million, "a difference of 46.7%". The card
+showed both period labels — *nine months period ended December 31, **2021*** and *nine months
+period ended December 31, **2020*** — and, underneath, both normalised to the same interval:
+`2021-12-01 → 2021-12-31`.
+
+Two independent bugs stacked up to produce that:
+
+1. `_PERIOD_ENDED_PATTERN` matched `nine months ended …` but not `nine months **period**
+   ended …`, so the second form fell through the multi-month matcher entirely.
+2. It then reached the month-and-year matcher, which took the first number after the month —
+   the **day**, 31 — and expanded it as a two-digit year into **2031**.
+
+So every label of that shape collapsed onto December 2031, a month no document mentions.
+Facts from different years then compared as though they covered identical periods, and the
+reconciler did exactly what it should with two different numbers for the same measure, same
+entity and same period: it called them a contradiction. The rule engine was right; it was
+being lied to by the parser beneath it.
+
+The fix is in two places: `period` is now optional filler between the span and `ended`, and
+the month-and-year matcher refuses to match when another number follows, leaving those labels
+to the date matchers that read them correctly as a single day. Six regression tests cover it,
+including the exact pair from the corpus, which now relates as `disjoint`.
+
+Worth stating plainly because it cuts against the case for the graph: the view the brief
+warns about is the one that surfaced this. Not because a picture is insightful, but because
+it put an unfamiliar path through the same data in front of a reader, and a false
+contradiction is much easier to notice when you are not the person who expected it to be
+there. The bug was equally visible in the table; nobody had looked at that row.
+
 ## Configuration
 
 All configuration is environment variables; see `.env.example`. Nothing is required to browse
@@ -711,3 +786,4 @@ Two settings trade cost against confidence and are worth knowing about:
 | --- | --- | --- |
 | `ADJUDICATION_CROSS_CHECK` | `true` | Reads every escalated pair a second time with the facts swapped. Doubles the cost of the smallest stage; turns an unverified model verdict into a measured one. |
 | `NEAR_DUPLICATE_RATIO` | `0.9` | How much of a document's substantive text must already be in the layer before it is flagged as repeating another. High on purpose — a false flag on a genuinely new filing costs more than a missed duplicate. |
+| `ENABLE_GRAPH_VIEW` | `false` | Adds a node-graph rendering of the relation table. See below for why it is off. |
