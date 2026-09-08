@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -11,11 +12,25 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import cases, documents, evaluation, facts, jobs, relations
+from app.api import cases, documents, evaluation, export, facts, jobs, relations
 from app.config import get_settings
 from app.db.engine import init_database
 
 logger = logging.getLogger(__name__)
+
+
+def use_utf8_console() -> None:
+    """Print rupee signs on Windows without crashing.
+
+    The console defaults to cp1252 there, and every figure in this corpus is prefixed with a
+    character it cannot encode — so `evaluate.py cases` died on its own output. Replacing
+    what cannot be encoded is right for a report: losing a glyph is a blemish, losing the
+    report is a failure.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def configure_logging(level: str) -> None:
@@ -69,6 +84,7 @@ for router in (
     cases.router,
     jobs.router,
     evaluation.router,
+    export.router,
 ):
     app.include_router(router)
 
@@ -105,6 +121,8 @@ def health() -> dict[str, Any]:
         "concurrency": settings.llm_concurrency,
         "rate_limit_rpm": settings.llm_rate_limit_rpm,
         "throttle_warnings": settings.throttle_warnings(),
+        "read_only": settings.read_only,
+        "ocr_enabled": settings.enable_ocr,
         "graph_view_enabled": settings.enable_graph_view,
         "graph_view_warning": settings.graph_view_warning(),
     }

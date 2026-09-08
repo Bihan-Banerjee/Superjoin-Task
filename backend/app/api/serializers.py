@@ -36,6 +36,8 @@ def document_summary(document: Document, counts: dict[str, int] | None = None) -
         "sha256": document.sha256,
         "near_duplicate_of": document.near_duplicate_of,
         "content_overlap": document.content_overlap,
+        "scanned_pages": document.scanned_pages,
+        "ocr_pages": document.ocr_pages,
         "created_at": document.created_at.isoformat() if document.created_at else None,
         "fact_count": counts.get("facts", 0),
         "relation_count": counts.get("relations", 0),

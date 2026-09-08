@@ -72,6 +72,23 @@ def _counts(session: Session, document_ids: list[int]) -> dict[int, dict[str, in
     return result
 
 
+def writable() -> None:
+    """Refuse anything that would change the layer when the deployment is read-only.
+
+    Applied as a route dependency rather than checked inside each handler, so a mutating
+    endpoint added later has to opt out of the guard deliberately instead of silently
+    missing it.
+    """
+    if get_settings().read_only:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "this deployment is read-only: it serves a prepared snapshot and cannot "
+                "ingest, reprocess or delete documents"
+            ),
+        )
+
+
 @router.get("")
 def list_documents(session: Session = Depends(db_session)) -> dict[str, Any]:
     documents = list(session.scalars(select(Document).order_by(Document.created_at.desc())))
@@ -83,7 +100,7 @@ def list_documents(session: Session = Depends(db_session)) -> dict[str, Any]:
     }
 
 
-@router.post("", status_code=202)
+@router.post("", status_code=202, dependencies=[Depends(writable)])
 async def upload_document(
     background: BackgroundTasks,
     file: UploadFile,
@@ -143,7 +160,7 @@ async def upload_document(
     }
 
 
-@router.post("/{document_id}/reprocess", status_code=202)
+@router.post("/{document_id}/reprocess", status_code=202, dependencies=[Depends(writable)])
 def reprocess_document(
     document_id: int,
     background: BackgroundTasks,
@@ -183,7 +200,7 @@ def get_document(document_id: int, session: Session = Depends(db_session)) -> di
     return document_detail(document, counts, pages)
 
 
-@router.delete("/{document_id}", status_code=204)
+@router.delete("/{document_id}", status_code=204, dependencies=[Depends(writable)])
 def delete_document(document_id: int, session: Session = Depends(db_session)) -> Response:
     document = session.get(Document, document_id)
     if document is None:

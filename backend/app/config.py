@@ -76,6 +76,19 @@ class Settings(BaseSettings):
     # graph_view_warning() for why.
     enable_graph_view: bool = False
 
+    # Serve the layer for reading and refuse everything that changes it. Intended for a
+    # deployment that shows the committed snapshot to reviewers: with this on, no API key is
+    # needed and none should be present, because nothing can start a model call.
+    read_only: bool = False
+
+    # Recover text from pages that carry an image and no text layer. Off by default because
+    # it needs Tesseract installed and costs roughly a second a page, and because an OCR
+    # quote is a transcription rather than something read from the file — worth having, worth
+    # knowing about. Scanned pages are *detected and reported* either way.
+    enable_ocr: bool = False
+    ocr_language: str = "eng"
+    ocr_dpi: int = Field(default=300, ge=72, le=600)
+
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     # ONNX threads for the embedding model. 0 chooses from the machine.
     embedding_threads: int = Field(default=0, ge=0, le=64)
