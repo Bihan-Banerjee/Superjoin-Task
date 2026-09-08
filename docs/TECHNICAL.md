@@ -117,6 +117,8 @@ normalise both facts
   -> one period contains the other              : REFINES     dimension = period
   -> periods disjoint or partially overlapping  : RECONCILED  dimension = period
   -> a discriminating qualifier differs         : RECONCILED  dimension = segment | scope
+  -> basis differs, values disagree, and one
+     basis replaces the other                   : SUPERSEDES  dimension = vintage
   -> basis differs and values disagree          : RECONCILED  dimension = basis | vintage
   -> values agree within tolerance              : CORROBORATES (notes scale or basis if they differ)
   -> values disagree by >= 50%, or either fact
@@ -133,6 +135,52 @@ page text, both document contexts, and a note saying what the mechanical compari
 established. The surrounding text matters: the distinction that explains a difference is
 very often just outside what was extracted — a column header, a footnote, a bracketed
 "(revised)".
+
+**Supersession is decided by rule and never by the model.** `SUPERSEDES` says which of two
+figures a reader should now be using, and that is a claim about the reporting cycle rather
+than about the prose: an outcome settles the estimate that preceded it, a restatement
+replaces what it restates. Both come from the `basis` field, so the verdict is checkable
+against what the documents say they are. Publication dates are deliberately not used as a
+substitute — a later document that disagrees without saying it is revising anything is a
+contradiction, and the interesting kind, not something to quietly relabel as an update. The
+ranking covers projection and forecast below estimate and provisional, those below actual,
+and restated and revised above all of them; `pro_forma` is unranked, because it is a
+different basis of preparation rather than a later view of the same one. Anything unranked
+falls through to the ordinary reconciliation.
+
+Because relations are stored with their pair in a fixed id order, the direction cannot ride
+on which side is `left`. The superseded fact is named by id in `relations.raw`.
+
+#### The adjudicator is checked against itself
+
+A model shown two statements is influenced by which one it reads first. That is a property
+of the technique, not a prompt defect, so every escalated pair is adjudicated twice with the
+two facts swapped and the answers compared.
+
+- Both readings agree — the verdict is kept, with the two confidences averaged.
+- One reading declines the pair as unrelated and the other does not — nothing is recorded.
+  There is no version of "a relationship half the time" worth storing.
+- The readings disagree — the verdict is kept, capped at 0.55 confidence, marked
+  `order_sensitive` in `relations.raw`, and shown in the UI as *Unsettled on re-reading*
+  with what the other ordering said.
+
+The last case is asymmetric on purpose. Where one ordering contradicts and the other
+reconciles, the **reconciliation** is kept. A contradiction is the strongest thing this
+system says about two documents, and it says it to a reader who will go and look, so it
+requires both readings to agree. The pair stays visible and flagged rather than being
+asserted as a conflict on the strength of a coin that landed differently the second time.
+
+The share of adjudicated pairs that changed on re-reading is reported on the Evaluation
+page. It is a direct measurement of how much of the model's judgement was about the evidence
+and how much was about the order it happened to be presented in.
+
+One limit worth naming: `refines` is directional, and neither the model's schema nor the
+relation row records which fact is the specific one, so a flip between "A refines B" and
+"B refines A" reads as agreement. Period containment — nearly every real instance — is
+settled by rule long before it reaches the model.
+
+Cross-checking doubles the cost of the smallest stage in the pipeline and can be turned off
+with `ADJUDICATION_CROSS_CHECK=false`.
 
 ### 4. The schema is data
 
@@ -209,14 +257,14 @@ See `backend/app/db/models.py`.
 
 | Table | Purpose |
 | --- | --- |
-| `documents` | sha256, profiled title/publisher/type, as-of date, default currency and scale, fiscal convention, status |
+| `documents` | sha256, profiled title/publisher/type, as-of date, default currency and scale, fiscal convention, status, near-duplicate link and content overlap |
 | `pages` | page number, printed label, page type, raw text, content hash, layout rendition, per-page unit declaration |
 | `facts` | the normalised claim tuple, provenance, evidence span and boxes, confidence, raw model output |
 | `entities` | canonical subject, aliases, embedding |
 | `measures` | canonical measure, unit class, aliases, first-seen document, fact and document counts |
 | `qualifier_keys` | discovered qualifier dimensions and their observed values |
 | `fact_embeddings` | float32 vectors, one contiguous matrix at query time |
-| `relations` | pair, type, subtype, dimension, decided_by, rule id, deltas, severity, explanation |
+| `relations` | pair, type, subtype, dimension, decided_by, rule id, deltas, severity, explanation, and `raw` for the superseded fact id and the order-sensitivity flag |
 | `rejections` | typed grounding and extraction failures |
 | `jobs` | per-document ingest job, stage, progress, statistics |
 | `llm_calls` | model, purpose, prompt hash, tokens, latency, cache hit |
@@ -229,27 +277,57 @@ Relation types: `corroborates`, `contradicts`, `reconciled_by_context`, `refines
 Vocabulary is stored as strings rather than SQL enums: the relation vocabulary is expected
 to grow, and an enum change in SQLite means a table rewrite for what is really a new label.
 
+`init_database` adds columns that exist in the models and not in the file, so a schema
+change does not strand a database that has already been ingested into. Additive only:
+nothing is dropped, renamed or retyped, because those need a decision about existing rows
+that a function running silently at startup has no business making. The reason it matters is
+cost — a full re-ingest is the one operation here that spends real money.
+
+### Detecting the same content in a different file
+
+Upload refuses a byte-identical PDF on its sha256. That catches uploading the same file
+twice and nothing else; the same content routinely arrives as a different file, whether
+re-exported by another tool, re-downloaded after a cosmetic revision, or excerpted from
+something already ingested. After parsing, a document's page text hashes are compared
+against every other document's, over pages of at least 400 characters — cover sheets and
+dividers are identical across unrelated filings from the same publisher, and counting them
+would report everything as a duplicate of everything.
+
+The measure is containment, not a symmetric overlap: the question is "how much of this
+document is already here", and a ten-page excerpt of a hundred-page filing is entirely
+contained in it while sharing a tenth of its pages. Above `NEAR_DUPLICATE_RATIO` (0.9) the
+document is linked to the one it repeats and the Documents page says so.
+
+Nothing is skipped on the strength of it. A revised filing shares most of its pages with the
+version it replaces, and the handful that changed are the reason to ingest it — so this
+reports and the reader decides. Re-reading the shared pages is nearly free in any case,
+since the response cache is keyed on prompt content and an unchanged page is served from
+disk rather than re-extracted.
+
 ## Pipeline
 
 `app/pipeline/orchestrator.py` runs nine stages and reports progress into the job row.
 
 ```mermaid
 flowchart TD
-    PDF[PDF upload] --> Parse[1 Parse<br/>text, word boxes, tables, geometry]
-    Parse --> Classify[2 Classify page<br/>prose / table / chart / contents]
-    Classify -->|contents, divider, empty| Skip[skipped, still indexed for search]
-    Classify --> Layout[3 Layout<br/>columns, or panels and alignment groups]
-    Layout --> Profile[4 Profile document<br/>publisher, fiscal convention, currency and scale]
-    Profile --> Extract[5 Extract<br/>batched by size; chart pages sent alone with an image]
-    Extract --> Ground[6 Ground<br/>locate quote, confirm value is on the page, map to boxes]
-    Ground -->|fails| Reject[(rejections<br/>typed reason)]
-    Ground --> Norm[7 Normalise<br/>units, scales, currency, periods, basis]
-    Norm --> Registry[8 Register<br/>measures, entities, qualifier keys]
-    Registry --> Candidates[9a Candidates<br/>measure, vector, lexical - new facts only]
-    Candidates --> Rules{9b Rules<br/>period? scale? scope? basis?}
-    Rules -->|decided| Relations[(relations<br/>with the rule that decided)]
-    Rules -->|cannot decide| Model[9c Model adjudication<br/>both quotes plus surrounding page text]
-    Model --> Relations
+    PDF["PDF upload"] --> Parse["1 Parse<br/>text, word boxes, tables, geometry"]
+    Parse --> Classify["2 Classify page<br/>prose, table, chart slide, contents"]
+    Classify -->|"contents, divider, empty"| Skip["skipped, still indexed for search"]
+    Classify --> Layout["3 Layout<br/>columns, or panels and alignment groups"]
+    Layout --> Profile["4 Profile document<br/>publisher, fiscal convention, currency and scale"]
+    Profile --> Extract["5 Extract<br/>batched by size; chart pages sent alone with an image"]
+    Extract --> Ground["6 Ground<br/>locate quote, confirm the value is on the page, map to boxes"]
+    Ground -->|"fails"| Reject[("rejections<br/>typed reason")]
+    Ground --> Norm["7 Normalise<br/>units, scales, currency, periods, basis"]
+    Norm --> Registry["8 Register<br/>measures, entities, qualifier keys"]
+    Registry --> Candidates["9a Candidates<br/>measure, vector, lexical; new facts only"]
+    Candidates --> Rules{"9b Rules<br/>period, scale, scope, basis"}
+    Rules -->|"decided"| Relations[("relations<br/>with the rule that decided")]
+    Rules -->|"cannot decide"| Model["9c Model adjudication<br/>both quotes plus surrounding page text"]
+    Model --> Swap{"9d Read again with<br/>the two facts swapped"}
+    Swap -->|"same answer"| Relations
+    Swap -->|"different answer"| Unsettled["kept, capped confidence,<br/>marked unsettled"]
+    Unsettled --> Relations
 ```
 
 The two outputs that matter are `relations` and `rejections`. The first is what the system
@@ -306,10 +384,56 @@ convention and default currency and scale. The declaration matters most: it is w
 model's reading, since they were seen rather than inferred. A failed profile call is logged
 and the ingest continues degraded rather than aborting.
 
+*Tables.* Detected tables are serialised as pipe-delimited rows, and a wide one is then
+written out cell by cell as well. The grid alone is not enough once a table is more than two
+or three data columns across: a figure in the fourth column is only meaningful joined to a
+heading that may be three rows above it, and that join is exactly what goes wrong. A value
+read off the "2024/25 Est." column and filed under "2023/24" is a well-formed fact that
+happens to be false, which is the worst kind for this system to produce, because nothing
+downstream can tell that it is wrong.
+
+Leading heading rows are detected (a row with two or more filled cells and no figures in
+them, up to three deep) and collapsed per column, so a year stacked over a basis becomes one
+heading. Then each numeric cell is emitted as `row label | column heading = value`:
+
+```
+[table 1]
+- | 2023/24 | 2024/25 | 2025/26
+- | Actual | Est. | Proj.
+Real GDP growth | 8.2 | 6.5 | 6.5
+[table 1 cells]
+Real GDP growth | 2023/24 Actual = 8.2
+Real GDP growth | 2024/25 Est. = 6.5
+Real GDP growth | 2025/26 Proj. = 6.5
+```
+
+The grid stays, so a model that prefers to read the layout still can, and nothing is taken
+away. Rows whose stub cell is blank are left in the grid only: inheriting the label above
+would attach figures to the wrong line item, and a spacer row is not worth a wrong fact.
+Output is capped at 200 addressed cells per table so a long statement of accounts cannot
+crowd out the rest of the page. The prompt states that these lines are assembled for the
+reader and must not be quoted as evidence, since they do not appear on the page — a quote
+taken from one would fail grounding and lose the fact.
+
 **5. Extract** (`extract.py`) — pages are batched by character budget (9,000) rather than by
 count, so requests stay uniform whatever the document's density. Chart pages are always sent
 alone, with a rendered PNG when a vision model is configured, because mixing other pages
 into that request invites the model to confuse them.
+
+*What the image is allowed to settle.* With a page image attached, the chart guidance
+licenses something the text-only instructions forbid: attaching a value to a series on
+evidence that is not in the text layer at all. A stacked bar's segments carry no label in the
+text, and their order in the extracted text is the order they were drawn rather than the
+order of the legend, so a text-only reader has no way in — this was the largest documented
+gap in the first run. Where a segment's colour matches a legend swatch, the model may attach
+the value to that series and must record what it matched in an `attribution` field, which is
+stored on the fact in `raw`.
+
+The licence is narrow and the caveat is real: the value itself is still read from the text,
+and this is the one claim in the system that no later check can verify against the page.
+Where two segments are close in colour, where the legend has more entries than the bar has
+segments, or where the rendering is too small to be sure, the instruction is still
+`unattributed` — a value filed under the wrong series is worse than one filed under none.
 
 **6. Ground** (`ground.py`) — as described above. Rejection reasons: `quote_not_found`,
 `value_absent_from_quote`, `ambiguous_short_quote`, `quote_too_short`, `subject_unresolved`,
@@ -580,3 +704,10 @@ because a run spending its time absorbing 429s looks exactly like a slow model.
 `LLM_PROVIDER=replay` serves recorded responses from `backend/seed/replay/` and refuses to
 call a model. A request with no recording fails loudly rather than being invented, so a
 replay run cannot quietly diverge from the run it reproduces.
+
+Two settings trade cost against confidence and are worth knowing about:
+
+| Variable | Default | What it buys |
+| --- | --- | --- |
+| `ADJUDICATION_CROSS_CHECK` | `true` | Reads every escalated pair a second time with the facts swapped. Doubles the cost of the smallest stage; turns an unverified model verdict into a measured one. |
+| `NEAR_DUPLICATE_RATIO` | `0.9` | How much of a document's substantive text must already be in the layer before it is flagged as repeating another. High on purpose — a false flag on a genuinely new filing costs more than a missed duplicate. |
