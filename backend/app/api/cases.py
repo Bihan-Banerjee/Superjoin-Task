@@ -27,6 +27,7 @@ from app.db.models import (
     REL_CORROBORATES,
     REL_RECONCILED,
     REL_REFINES,
+    REL_SUPERSEDES,
     Document,
     Fact,
     Page,
@@ -210,7 +211,11 @@ def _reconciled_case(context: _Context) -> dict[str, Any]:
     is exactly what the reconciliation logic exists to prevent.
     """
     scored: list[tuple[float, dict[str, Any], list[str]]] = []
-    pool = context.relations(REL_RECONCILED) + context.relations(REL_REFINES, limit=100)
+    pool = (
+        context.relations(REL_RECONCILED)
+        + context.relations(REL_REFINES, limit=100)
+        + context.relations(REL_SUPERSEDES, limit=100)
+    )
 
     for relation in pool:
         if relation.dimension == DIM_NONE:
@@ -222,6 +227,11 @@ def _reconciled_case(context: _Context) -> dict[str, Any]:
         gap = relation.delta_relative or 0.0
         score = relation.confidence + min(gap, 1.0) * 2.0
         reasons = [f"the difference is explained by {relation.dimension.replace('_', ' ')}"]
+        if relation.relation_type == REL_SUPERSEDES:
+            # The most useful answer of the three: it explains the difference and then says
+            # which of the two figures a reader should now be using.
+            score += 0.5
+            reasons.append("one statement replaces the other rather than competing with it")
         if gap:
             reasons.append(
                 f"without that explanation the {gap:.1%} gap would read as a contradiction"

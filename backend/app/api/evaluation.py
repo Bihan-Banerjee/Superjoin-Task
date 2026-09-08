@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.engine import db_session
 from app.db.models import (
+    DECIDED_BY_MODEL,
     Document,
     Entity,
     Fact,
@@ -169,6 +170,38 @@ def _relations(session: Session) -> dict[str, Any]:
                 .order_by(func.count(Relation.id).desc())
             ).all()
         ],
+        "adjudication": _adjudication(session),
+    }
+
+
+def _adjudication(session: Session) -> dict[str, Any]:
+    """How steady the model was on the pairs the rules could not settle.
+
+    Each escalated pair is read twice with the two facts swapped. Pairs where the answer
+    changed are kept, marked, and counted here — the number is a direct measurement of how
+    much of the model's judgement was about the evidence and how much was about the order it
+    happened to be presented in.
+    """
+    decided_by_model = int(
+        session.scalar(
+            select(func.count(Relation.id)).where(Relation.decided_by == DECIDED_BY_MODEL)
+        )
+        or 0
+    )
+    unsettled = int(
+        session.scalar(
+            select(func.count(Relation.id)).where(
+                Relation.raw["order_sensitive"].as_boolean().is_(True)
+            )
+        )
+        or 0
+    )
+    return {
+        "decided_by_model": decided_by_model,
+        "order_sensitive": unsettled,
+        "order_sensitive_rate": (
+            round(unsettled / decided_by_model, 3) if decided_by_model else 0.0
+        ),
     }
 
 

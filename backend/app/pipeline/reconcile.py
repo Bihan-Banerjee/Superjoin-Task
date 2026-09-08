@@ -37,6 +37,7 @@ from app.db.models import (
     REL_CORROBORATES,
     REL_RECONCILED,
     REL_REFINES,
+    REL_SUPERSEDES,
     Fact,
 )
 
@@ -62,6 +63,28 @@ DISCRIMINATING_QUALIFIERS = (
 _FORWARD_LOOKING = {"estimate", "projection", "forecast", "budgeted", "target", "provisional"}
 _BACKWARD_LOOKING = {"actual", "revised", "restated"}
 
+# How far along the reporting cycle each basis sits. A higher rank replaces a lower one for
+# the same period: an outcome settles what a projection guessed at, and a restatement
+# replaces the figure it restates.
+#
+# Only bases with a genuine ordering appear here. A projection and an estimate are two
+# readings made at different removes from the event, not successive corrections of one
+# another, so they share a rank and stay unordered. Pro forma is absent entirely: it is a
+# different basis of preparation rather than a later view of the same one. Anything
+# unranked falls through to the existing reconciliation, which reports the difference
+# without claiming one side is stale.
+_SUPERSESSION_RANK = {
+    "projection": 0,
+    "forecast": 0,
+    "budgeted": 0,
+    "target": 0,
+    "estimate": 1,
+    "provisional": 1,
+    "actual": 2,
+    "revised": 3,
+    "restated": 3,
+}
+
 
 @dataclass
 class Verdict:
@@ -77,6 +100,17 @@ class Verdict:
     decided_by: str = DECIDED_BY_RULE
     escalate: bool = False
     note: str = ""
+    # Which of the two facts the other one replaces, named by id rather than by side.
+    # Relations are stored with their pair in a fixed id order so the uniqueness constraint
+    # catches a duplicate whichever fact arrived first, which means "left" and "right" here
+    # need not survive into the row. An id does.
+    superseded_fact_id: int | None = None
+    # Set when the same pair was adjudicated in both orders and the model did not give the
+    # same answer twice. Recorded rather than hidden: a verdict that depends on which fact
+    # was presented first is a weaker claim than one that does not, and the difference is
+    # worth being able to count.
+    order_sensitive: bool = False
+    reverse_relation_type: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -177,6 +211,24 @@ def reconcile(left: Fact, right: Fact) -> Verdict:
 
     basis_difference = _basis_difference(left, right)
     if basis_difference is not None and not agrees:
+        superseded = _supersession(left, right)
+        if superseded is not None:
+            stale, current = superseded
+            return Verdict(
+                relation_type=REL_SUPERSEDES,
+                dimension=DIM_VINTAGE,
+                subtype="later_statement",
+                rule_id="basis-supersedes",
+                explanation=(
+                    f"Both cover {_period_text(left)}. {current.value_text} is stated as "
+                    f"{current.basis}, which replaces the {stale.basis} of "
+                    f"{stale.value_text} rather than disagreeing with it."
+                ),
+                confidence=0.88,
+                delta_absolute=absolute,
+                delta_relative=difference,
+                superseded_fact_id=stale.id,
+            )
         return Verdict(
             relation_type=REL_RECONCILED,
             dimension=DIM_VINTAGE if basis_difference[2] else DIM_BASIS,
@@ -378,6 +430,25 @@ def _basis_difference(left: Fact, right: Fact) -> tuple[str, str, bool] | None:
         or {left_basis, right_basis} & {"revised", "restated"}
     )
     return left_label, right_label, vintage
+
+
+def _supersession(left: Fact, right: Fact) -> tuple[Fact, Fact] | None:
+    """The (superseded, superseding) pair when one basis replaces the other.
+
+    Reporting the same period twice on different bases is not a conflict, and calling it
+    one merely by dimension leaves out the part a reader wants: which figure is the current
+    one. An outcome settles an estimate; a restatement replaces what it restates.
+
+    The ordering comes from the bases alone. Publication dates are deliberately not used:
+    a later document repeating an earlier figure unchanged is not a restatement, and a
+    document that disagrees without saying it is revising anything is a contradiction — the
+    interesting kind, and not one to quietly relabel as an update.
+    """
+    left_rank = _SUPERSESSION_RANK.get((left.basis or "").strip().lower())
+    right_rank = _SUPERSESSION_RANK.get((right.basis or "").strip().lower())
+    if left_rank is None or right_rank is None or left_rank == right_rank:
+        return None
+    return (left, right) if left_rank < right_rank else (right, left)
 
 
 def _dimension_for(key: str) -> str:

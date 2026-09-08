@@ -43,12 +43,36 @@ logger = logging.getLogger(__name__)
 
 CONTEXT_RADIUS = 420
 
+# What a verdict is worth once it turns out to depend on which fact came first. Not zero:
+# the model did read the evidence and did reach a conclusion. Not what an unchallenged
+# verdict is worth either, since half the time it reached a different one.
+ORDER_SENSITIVE_CONFIDENCE = 0.55
+
 _VERDICT_MAP = {
     "corroborates": REL_CORROBORATES,
     "contradicts": REL_CONTRADICTS,
     "reconciled_by_context": REL_RECONCILED,
     "refines": REL_REFINES,
 }
+
+
+@dataclass
+class CrossCheckStats:
+    """What the second opinion cost and what it caught."""
+
+    checked: int = 0
+    agreed: int = 0
+    order_sensitive: int = 0
+    dropped: int = 0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "checked": self.checked,
+            "agreed": self.agreed,
+            "order_sensitive": self.order_sensitive,
+            "dropped": self.dropped,
+            "agreement_rate": round(self.agreed / self.checked, 3) if self.checked else 0.0,
+        }
 
 
 @dataclass
@@ -66,6 +90,8 @@ async def adjudicate_all(
     context: dict[int, dict[str, Any]],
     *,
     on_progress=None,
+    cross_check: bool = False,
+    stats: CrossCheckStats | None = None,
 ) -> dict[tuple[int, int], Verdict]:
     """Adjudicate every escalated pair.
 
@@ -79,10 +105,11 @@ async def adjudicate_all(
     results: dict[tuple[int, int], Verdict] = {}
     completed = 0
     lock = asyncio.Lock()
+    tally = stats if stats is not None else CrossCheckStats()
 
     async def run(item: AdjudicationRequest) -> None:
         nonlocal completed
-        verdict = await _adjudicate_one(client, item, context)
+        verdict = await _adjudicate_pair(client, item, context, cross_check, tally)
         async with lock:
             if verdict is not None:
                 results[(item.left.id, item.right.id)] = verdict
@@ -92,6 +119,81 @@ async def adjudicate_all(
 
     await asyncio.gather(*(run(item) for item in requests))
     return results
+
+
+async def _adjudicate_pair(
+    client: LlmClient,
+    item: AdjudicationRequest,
+    context: dict[int, dict[str, Any]],
+    cross_check: bool,
+    stats: CrossCheckStats,
+) -> Verdict | None:
+    """Ask once, and when cross-checking is on, ask again with the facts swapped.
+
+    A judge shown two statements is influenced by which one it reads first. That is a
+    documented property of the technique and not something a better prompt removes, so the
+    only way to find out whether a verdict was about the evidence is to present the same
+    evidence the other way round and see whether the answer survives.
+
+    The policy when it does not is deliberately asymmetric. A contradiction is the strongest
+    thing this system says about a pair of documents, and it says it to a reader who will go
+    and look — so it needs both readings to agree. Where one ordering contradicts and the
+    other reconciles, the reconciliation is kept and the disagreement is recorded on the
+    relation. That is the conservative direction: the pair stays visible, flagged as
+    unsettled, rather than being asserted as a conflict on the strength of a coin that
+    landed differently the second time.
+
+    One case the comparison cannot see: `refines` is directional, and neither the model's
+    schema nor the relation row records which fact is the specific one, so a flip between
+    "A refines B" and "B refines A" reads as agreement. Period containment — nearly every
+    real instance — is settled by rule long before it reaches here.
+    """
+    forward = await _ask(client, item, context, swapped=False)
+    if not cross_check:
+        return forward
+
+    reverse = await _ask(client, item, context, swapped=True)
+    stats.checked += 1
+
+    if forward is None or reverse is None:
+        # One ordering produced a verdict and the other declined the pair entirely. There is
+        # no version of that worth recording as a relationship.
+        if forward is not None or reverse is not None:
+            stats.dropped += 1
+            return None
+        return None
+
+    if forward.relation_type == reverse.relation_type:
+        stats.agreed += 1
+        forward.confidence = round((forward.confidence + reverse.confidence) / 2, 3)
+        return forward
+
+    stats.order_sensitive += 1
+    kept, other = forward, reverse
+    if forward.relation_type == REL_CONTRADICTS:
+        kept, other = reverse, forward
+
+    kept.order_sensitive = True
+    kept.reverse_relation_type = other.relation_type
+    kept.confidence = round(min(kept.confidence, ORDER_SENSITIVE_CONFIDENCE), 3)
+    kept.severity = round(kept.severity * ORDER_SENSITIVE_CONFIDENCE, 3)
+    kept.explanation = (
+        f"{kept.explanation} Presented in the opposite order the same comparison was read "
+        f"as {other.relation_type.replace('_', ' ')} instead, so this verdict depends on "
+        "which fact came first and is recorded as unsettled."
+    ).strip()
+    return kept
+
+
+async def _ask(
+    client: LlmClient,
+    item: AdjudicationRequest,
+    context: dict[int, dict[str, Any]],
+    *,
+    swapped: bool,
+) -> Verdict | None:
+    first, second = (item.right, item.left) if swapped else (item.left, item.right)
+    return await _adjudicate_one(client, item, context, first, second)
 
 
 def load_adjudication_context(
@@ -139,14 +241,18 @@ def load_adjudication_context(
 
 
 async def _adjudicate_one(
-    client: LlmClient, item: AdjudicationRequest, context: dict[int, dict[str, Any]]
+    client: LlmClient,
+    item: AdjudicationRequest,
+    context: dict[int, dict[str, Any]],
+    first: Fact,
+    second: Fact,
 ) -> Verdict | None:
     request = LlmRequest(
         purpose=PURPOSE_ADJUDICATE,
         system=ADJUDICATE_SYSTEM,
         user=adjudicate_prompt(
-            _render(item.left, context.get(item.left.id, {})),
-            _render(item.right, context.get(item.right.id, {})),
+            _render(first, context.get(first.id, {})),
+            _render(second, context.get(second.id, {})),
             item.note,
         ),
         schema=ADJUDICATION_SCHEMA,

@@ -11,6 +11,7 @@ from app.db.models import (
     REL_CORROBORATES,
     REL_RECONCILED,
     REL_REFINES,
+    REL_SUPERSEDES,
     Fact,
 )
 from app.pipeline.reconcile import reconcile
@@ -109,15 +110,117 @@ def test_a_segment_figure_against_a_total_is_reconciled_by_scope():
     assert verdict.dimension == DIM_SEGMENT
 
 
-def test_an_estimate_and_an_outcome_are_reconciled_by_vintage():
+def test_an_outcome_supersedes_the_estimate_it_settles():
+    """Naming the direction is the point.
+
+    Reporting only that these differ by vintage leaves out what a reader actually wants,
+    which is which of the two figures is the current one.
+    """
     verdict = reconcile(
         fact(
-            value_base=6.5, value_text="6.5%", unit_class="ratio", currency=None, basis="estimate"
+            id=1,
+            value_base=6.5,
+            value_text="6.5%",
+            unit_class="ratio",
+            currency=None,
+            basis="estimate",
         ),
-        other(value_base=8.2, value_text="8.2%", unit_class="ratio", currency=None, basis="actual"),
+        other(
+            id=2,
+            value_base=8.2,
+            value_text="8.2%",
+            unit_class="ratio",
+            currency=None,
+            basis="actual",
+        ),
+    )
+    assert verdict.relation_type == REL_SUPERSEDES
+    assert verdict.dimension == DIM_VINTAGE
+    assert verdict.superseded_fact_id == 1
+
+
+def test_supersession_is_named_by_fact_not_by_side():
+    """Relations are stored in a fixed id order, so the direction cannot ride on position."""
+    forward = reconcile(
+        fact(
+            id=1,
+            value_base=100.0,
+            value_text="100",
+            unit_class="count",
+            currency=None,
+            basis="projection",
+        ),
+        other(
+            id=2,
+            value_base=140.0,
+            value_text="140",
+            unit_class="count",
+            currency=None,
+            basis="restated",
+        ),
+    )
+    reverse = reconcile(
+        fact(
+            id=2,
+            value_base=140.0,
+            value_text="140",
+            unit_class="count",
+            currency=None,
+            basis="restated",
+        ),
+        other(
+            id=1,
+            value_base=100.0,
+            value_text="100",
+            unit_class="count",
+            currency=None,
+            basis="projection",
+        ),
+    )
+    assert forward.superseded_fact_id == reverse.superseded_fact_id == 1
+
+
+def test_a_restatement_supersedes_the_outcome_it_restates():
+    verdict = reconcile(
+        fact(id=1, value_base=8142 * CRORE, basis="actual"),
+        other(id=2, value_base=8300 * CRORE, value_text="8,300 Cr", basis="restated"),
+    )
+    assert verdict.relation_type == REL_SUPERSEDES
+    assert verdict.superseded_fact_id == 1
+
+
+def test_two_unordered_bases_are_reconciled_without_claiming_one_is_stale():
+    """An estimate and a provisional figure are two readings, not successive corrections."""
+    verdict = reconcile(
+        fact(
+            id=1,
+            value_base=6.5,
+            value_text="6.5%",
+            unit_class="ratio",
+            currency=None,
+            basis="estimate",
+        ),
+        other(
+            id=2,
+            value_base=8.2,
+            value_text="8.2%",
+            unit_class="ratio",
+            currency=None,
+            basis="provisional",
+        ),
     )
     assert verdict.relation_type == REL_RECONCILED
-    assert verdict.dimension == DIM_VINTAGE
+    assert verdict.superseded_fact_id is None
+
+
+def test_a_pro_forma_restatement_is_not_treated_as_a_later_figure():
+    """Pro forma is a different basis of preparation, not a newer view of the same one."""
+    verdict = reconcile(
+        fact(id=1, value_base=8142 * CRORE, basis="actual"),
+        other(id=2, value_base=9000 * CRORE, value_text="9,000 Cr", basis="pro_forma"),
+    )
+    assert verdict.relation_type == REL_RECONCILED
+    assert verdict.dimension == DIM_BASIS
 
 
 def test_agreeing_figures_on_different_bases_still_report_the_difference():
