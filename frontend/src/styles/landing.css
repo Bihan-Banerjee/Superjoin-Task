@@ -530,7 +530,12 @@ html[data-page="landing"] body {
   color: var(--fog);
 }
 
+/* Document titles come from the documents themselves, and one of them is 113 characters
+   of IMF report front matter. Clamp rather than truncate the data. */
 .lp-strip__row span {
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
