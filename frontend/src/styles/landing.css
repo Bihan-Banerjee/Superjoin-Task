@@ -1,0 +1,690 @@
+/*
+  The landing page, as a marked-up document.
+
+  The product reads a page and marks what matters on it, so the layout borrows that
+  vocabulary rather than the usual hero-and-cards arrangement: a numbered margin rail down
+  the left, one wide text column, highlighter marks on the figures that carry the argument,
+  and marginal notes set against a rule.
+
+  Colour is used the way a highlighter uses it. Marks are drawn as a sweep behind the
+  baseline rather than a solid fill, so the text keeps the page's own foreground colour and
+  contrast never depends on the tint. Every surface here pairs an explicit background with an
+  explicit foreground; nothing inherits a colour it was not given.
+*/
+
+.doc {
+  min-height: 100vh;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* --- Top bar ------------------------------------------------------------------------ */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(10px) saturate(1.2);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 10px var(--space-6);
+}
+
+/* The reading-progress rule doubles as the bar's bottom edge, so the chrome is doing
+   something rather than merely being there. */
+.topbar__rule {
+  display: block;
+  height: 2px;
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+  background: linear-gradient(
+    90deg,
+    var(--series-1),
+    var(--series-3),
+    var(--series-4),
+    var(--series-2)
+  );
+  transition: transform 0.08s linear;
+}
+
+.topbar__mark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  text-decoration: none;
+  color: var(--text);
+}
+
+.topbar__glyph {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  color: var(--accent-bright);
+}
+
+.topbar__name {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.topbar__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.topbar__nav a:not(.stamp) {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+}
+
+.topbar__nav a:not(.stamp) i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+.topbar__nav a:not(.stamp):hover {
+  color: var(--text);
+  border-bottom-color: var(--accent-bright);
+}
+
+/* A pressed-ink button rather than a rounded pill. */
+.stamp {
+  display: inline-block;
+  padding: 7px 14px;
+  border: 1px solid var(--accent-strong);
+  border-radius: 2px;
+  background: var(--accent-strong);
+  color: var(--stamp-ink);
+  font-size: var(--text-sm);
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  box-shadow: 3px 3px 0 var(--accent-glow);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.stamp:hover {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--accent-glow);
+}
+
+.stamp--lg {
+  padding: 10px 20px;
+  font-size: var(--text-md);
+}
+
+.ghost {
+  display: inline-block;
+  padding: 10px 4px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: var(--text-md);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.ghost:hover {
+  color: var(--text);
+  border-bottom-color: var(--accent-bright);
+}
+
+/* --- Sheet and folios ---------------------------------------------------------------- */
+
+.sheet {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.folio {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: var(--space-5);
+  padding: clamp(40px, 6vw, 88px) var(--space-6);
+  border-bottom: 1px solid var(--border);
+}
+
+.folio--tint {
+  background: var(--surface-sunken);
+}
+
+.folio__rail {
+  border-right: 1px solid var(--border);
+}
+
+.folio__num {
+  position: sticky;
+  top: 88px;
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  color: var(--text-faint);
+  letter-spacing: -0.02em;
+}
+
+.folio__body {
+  min-width: 0;
+  max-width: 74ch;
+}
+
+.kicker {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-bright);
+}
+
+.display {
+  margin: 0 0 var(--space-4);
+  font-size: clamp(30px, 5vw, 58px);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+}
+
+.heading {
+  margin: 0 0 var(--space-5);
+  font-size: clamp(21px, 2.6vw, 30px);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.lede {
+  margin: 0 0 var(--space-5);
+  font-size: clamp(15px, 1.35vw, 18px);
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.lede b {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.aside-note {
+  margin: var(--space-5) 0 0;
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--highlight);
+  font-size: var(--text-md);
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* --- Highlighter marks ---------------------------------------------------------------- */
+
+/* `mark` defaults to black on yellow in most browsers, which would ignore the theme, so
+   both colours are stated. The sweep sits behind the lower half of the line only. */
+.mk {
+  color: var(--text);
+  background: linear-gradient(transparent 58%, var(--mk-tint) 58%, var(--mk-tint) 94%);
+  padding: 0 2px;
+  border-radius: 1px;
+}
+
+.mk-1 {
+  --mk-tint: color-mix(in srgb, var(--series-2) var(--mk-strength), transparent);
+}
+.mk-2 {
+  --mk-tint: color-mix(in srgb, var(--corroborate) var(--mk-strength), transparent);
+}
+.mk-3 {
+  --mk-tint: color-mix(in srgb, var(--series-1) var(--mk-strength), transparent);
+}
+
+/* --- Clippings ------------------------------------------------------------------------ */
+
+.clips {
+  margin: var(--space-5) 0 0;
+}
+
+.clips__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.clip {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border-strong);
+  border-radius: 2px;
+}
+
+.clip figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.clip__line {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  color: var(--text);
+}
+
+.clip__line .mk {
+  font-family: var(--font-mono);
+  font-size: clamp(17px, 2vw, 22px);
+  font-weight: 600;
+}
+
+.clip__note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.tie {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+}
+
+.tie__thread {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, var(--border-strong) 0 4px, transparent 4px 8px);
+}
+
+.tie__seal {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--corroborate-border);
+  background: var(--corroborate-soft);
+  color: var(--corroborate);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+}
+
+.clips__verdict {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-md);
+  color: var(--text-muted);
+}
+
+.clips__verdict b {
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+/* --- Steps ---------------------------------------------------------------------------- */
+
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--border);
+}
+
+.step:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.step__bead {
+  width: 10px;
+  height: 10px;
+  margin-top: 7px;
+  border-radius: 50%;
+}
+
+.step__bead--1 {
+  background: var(--series-1);
+}
+.step__bead--2 {
+  background: var(--series-3);
+}
+.step__bead--3 {
+  background: var(--series-4);
+}
+.step__bead--4 {
+  background: var(--series-2);
+}
+
+.step__text h3 {
+  margin: 0 0 6px;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+}
+
+.step__text p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.65;
+  max-width: 68ch;
+}
+
+/* --- Proofs ---------------------------------------------------------------------------- */
+
+/* Panes of one sheet rather than free-floating cards: hairline dividers, no gaps, no
+   shadows, one coloured edge each. */
+.proofs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.proof {
+  position: relative;
+  padding: var(--space-4) var(--space-4) calc(var(--space-5) + 8px);
+  border-right: 1px solid var(--border);
+  border-top: 3px solid var(--border-strong);
+}
+
+.proof:last-child {
+  border-right: none;
+}
+
+.proof--good {
+  border-top-color: var(--corroborate);
+}
+.proof--bad {
+  border-top-color: var(--contradict);
+}
+.proof--warn {
+  border-top-color: var(--reconcile);
+}
+.proof--plain {
+  border-top-color: var(--series-2);
+}
+
+.proof__index {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+.proof__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  letter-spacing: -0.01em;
+}
+
+.proof__body {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.proof__verdict {
+  position: absolute;
+  left: var(--space-4);
+  bottom: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.proof--good .proof__verdict {
+  color: var(--corroborate);
+}
+.proof--bad .proof__verdict {
+  color: var(--contradict);
+}
+.proof--warn .proof__verdict {
+  color: var(--reconcile);
+}
+
+/* --- Running figures ------------------------------------------------------------------- */
+
+.running {
+  margin: var(--space-5) 0 0;
+  font-size: clamp(15px, 1.3vw, 17px);
+  line-height: 1.9;
+  color: var(--text-muted);
+  max-width: 70ch;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text);
+  padding: 1px 5px;
+  border-radius: 2px;
+  background: var(--surface-inset);
+}
+
+.num--accent {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.num--good {
+  color: var(--corroborate);
+  background: var(--corroborate-soft);
+}
+.num--bad {
+  color: var(--contradict);
+  background: var(--contradict-soft);
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+/* --- Colophon --------------------------------------------------------------------------- */
+
+.colophon {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-6);
+}
+
+.colophon__mark {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  color: var(--text-faint);
+}
+
+.colophon p {
+  margin: 0;
+  max-width: 74ch;
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+/* --- Theme toggle ------------------------------------------------------------------------ */
+
+.theme-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--surface-inset);
+}
+
+.theme-toggle__pick {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  border: none;
+  border-radius: 1px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.theme-toggle__pick:hover {
+  color: var(--text);
+}
+
+.theme-toggle__pick.is-on {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- Reveal ------------------------------------------------------------------------------ */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.45s ease,
+    transform 0.45s ease;
+  transition-delay: calc(var(--i, 0) * 55ms);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .stamp:hover {
+    transform: none;
+  }
+}
+
+/* --- Responsive -------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .folio {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .colophon {
+    grid-template-columns: 44px minmax(0, 1fr);
+    row-gap: var(--space-3);
+  }
+
+  .colophon .theme-toggle {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .folio__num {
+    font-size: var(--text-lg);
+  }
+
+  .clips__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tie {
+    width: 100%;
+    height: 34px;
+  }
+
+  .tie__thread {
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    right: auto;
+    width: 1px;
+    height: auto;
+    background: repeating-linear-gradient(
+      180deg,
+      var(--border-strong) 0 4px,
+      transparent 4px 8px
+    );
+  }
+
+  .proof {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .proof:last-child {
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar__inner,
+  .folio,
+  .colophon {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+
+  /* The section anchors are a convenience; the workbench link is not. */
+  .topbar__nav a:not(.stamp) {
+    display: none;
+  }
+
+  .topbar__nav {
+    gap: var(--space-2);
+  }
+}

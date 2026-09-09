@@ -21,7 +21,7 @@
 
   --text: #1c1b19;
   --text-muted: #6b6862;
-  --text-faint: #94908a;
+  --text-faint: #6f6a62;
   --text-inverse: #fbfbfa;
 
   --accent: #2f5573;
@@ -52,6 +52,25 @@
   --series-4: #9c6a35;
   --series-5: #8a4f66;
   --series-6: #5b6f3a;
+
+
+  /* Deeper accents, used where an element should carry weight rather than just sit there:
+     the landing page, primary actions, the active nav item. The workbench palette above is
+     unchanged: dense tables still need to be quiet. */
+  --accent-strong: #1f3d57;
+  --stamp-ink: #ffffff;
+  --mk-strength: 40%;
+  --accent-bright: #33689a;
+  --accent-glow: rgba(61, 122, 176, 0.16);
+
+  --ink: #14181d;
+  --ink-soft: #1d232b;
+  --ink-line: #2b333d;
+  --on-ink: #eef1f4;
+  --on-ink-muted: #9aa5b1;
+
+  --highlight: #b8862a;
+  --highlight-soft: #fbf3e0;
 
   --neutral-chip: #eeece9;
   --neutral-chip-border: #d8d5d0;
@@ -97,7 +116,7 @@
 
     --text: #e6e4e1;
     --text-muted: #9a9691;
-    --text-faint: #6f6c68;
+    --text-faint: #9a948c;
     --text-inverse: #16181a;
 
     --accent: #7ba7cd;
@@ -122,12 +141,36 @@
   --series-4: #d2a06a;
   --series-5: #c48ba0;
   --series-6: #9db473;
+  --accent-strong: #9dc4e6;
+  --stamp-ink: #0f1216;
+  --mk-strength: 62%;
+  --accent-bright: #7fb2df;
+  --accent-glow: rgba(127, 178, 223, 0.18);
+  --ink: #0f1216;
+  --ink-soft: #161b21;
+  --ink-line: #252c34;
+  --on-ink: #eef1f4;
+  --on-ink-muted: #98a2ad;
+  --highlight: #d8b366;
+  --highlight-soft: #2a2113;
     --series-1: #85aecf;
     --series-2: #b096d0;
     --series-3: #7fbaa6;
     --series-4: #d2a06a;
     --series-5: #c48ba0;
     --series-6: #9db473;
+    --accent-strong: #9dc4e6;
+    --stamp-ink: #0f1216;
+    --mk-strength: 62%;
+    --accent-bright: #7fb2df;
+    --accent-glow: rgba(127, 178, 223, 0.18);
+    --ink: #0f1216;
+    --ink-soft: #161b21;
+    --ink-line: #252c34;
+    --on-ink: #eef1f4;
+    --on-ink-muted: #98a2ad;
+    --highlight: #d8b366;
+    --highlight-soft: #2a2113;
 
     --neutral-chip: #24272a;
     --neutral-chip-border: #34383c;
@@ -148,7 +191,7 @@
 
   --text: #e6e4e1;
   --text-muted: #9a9691;
-  --text-faint: #6f6c68;
+  --text-faint: #9a948c;
   --text-inverse: #16181a;
 
   --accent: #7ba7cd;
