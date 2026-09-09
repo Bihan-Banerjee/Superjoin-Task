@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 export function Panel({
@@ -91,7 +92,7 @@ export function MetaList({ items }: { items: [string, ReactNode][] }) {
  * A quote with the matched value highlighted.
  *
  * Highlighting is done by locating the value string in the quote rather than by storing
- * offsets, because the quote shown here is already the span the backend verified — the
+ * offsets, because the quote shown here is already the span the backend verified: the
  * value is guaranteed to be inside it.
  */
 export function Quote({ text, highlight }: { text: string; highlight?: string | null }) {
@@ -166,7 +167,7 @@ export function Pagination({
  * Download the current view as a file.
  *
  * The filters in the URL are passed through, so what lands in the spreadsheet is what is on
- * screen rather than the whole corpus — otherwise the export answers a different question
+ * screen rather than the whole corpus: otherwise the export answers a different question
  * from the one the reader was asking.
  */
 export function ExportLinks({
@@ -195,5 +196,102 @@ export function ExportLinks({
         JSON
       </a>
     </span>
+  );
+}
+
+/**
+ * A long list, shown short.
+ *
+ * Several pages here produce lists whose length is data-dependent: rejection reasons,
+ * measure aliases, selection rationales, facts on a page. Rendering all of them pushes
+ * everything below off the screen, and truncating without a way back hides evidence, which
+ * this interface should never do. So the tail is collapsed rather than dropped, and the
+ * control says how much is behind it.
+ */
+export function Expandable({
+  items,
+  initial = 5,
+  noun = "more",
+  children,
+}: {
+  items: ReactNode[];
+  initial?: number;
+  noun?: string;
+  children?: (item: ReactNode, index: number) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const hidden = Math.max(0, items.length - initial);
+  const shown = open ? items : items.slice(0, initial);
+
+  return (
+    <>
+      {shown.map((item, index) => (children ? children(item, index) : item))}
+      {hidden > 0 ? (
+        <button
+          type="button"
+          className="expander"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          {open ? "Show fewer" : `Show ${hidden} ${noun}`}
+          <span aria-hidden="true" className="expander__mark">
+            {open ? "−" : "+"}
+          </span>
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * A block of content that is capped in height until asked to open.
+ *
+ * Used where the content is one long thing rather than a list: a page of prose, a wide
+ * table: so slicing items is not available. The fade at the cut edge is the affordance:
+ * it says the text continues rather than ends.
+ */
+export function ExpandableBlock({
+  children,
+  maxHeight = 260,
+  label = "Show the rest",
+}: {
+  children: ReactNode;
+  maxHeight?: number;
+  label?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const inner = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const element = inner.current;
+    if (!element) return;
+    // Only offer the control when there is genuinely something hidden; otherwise every
+    // short block grows a button that does nothing.
+    const check = () => setOverflows(element.scrollHeight > maxHeight + 8);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [maxHeight, children]);
+
+  return (
+    <div className="clamp">
+      <div
+        ref={inner}
+        className={overflows && !open ? "clamp__body clamp__body--cut" : "clamp__body"}
+        style={overflows && !open ? { maxHeight } : undefined}
+      >
+        {children}
+      </div>
+      {overflows ? (
+        <button type="button" className="expander" onClick={() => setOpen((value) => !value)}>
+          {open ? "Collapse" : label}
+          <span aria-hidden="true" className="expander__mark">
+            {open ? "−" : "+"}
+          </span>
+        </button>
+      ) : null}
+    </div>
   );
 }

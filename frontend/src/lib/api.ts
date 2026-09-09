@@ -13,6 +13,7 @@ import type {
   Rejection,
   Relation,
   RelationGraphData,
+  SettingsPayload,
 } from "./types";
 
 export class ApiError extends Error {
@@ -58,6 +59,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<Health>("/api/health"),
+
+  getSettings: () => request<SettingsPayload>("/api/settings"),
+  updateSettings: (changes: Record<string, unknown>) =>
+    request<{ values: Record<string, unknown>; warnings: string[] }>("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    }),
 
   listDocuments: () => request<{ documents: DocumentSummary[] }>("/api/documents"),
   getDocument: (id: number) => request<DocumentDetail>(`/api/documents/${id}`),

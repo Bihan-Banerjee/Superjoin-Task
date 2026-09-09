@@ -2,7 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { Chip, Empty, ErrorNote, Field, Loading, Panel } from "../components/primitives";
+import {
+  Chip,
+  Empty,
+  ErrorNote,
+  Expandable,
+  Field,
+  Loading,
+  Panel,
+} from "../components/primitives";
 import { api } from "../lib/api";
 import { formatNumber, titleCase, truncate } from "../lib/format";
 
@@ -155,23 +163,9 @@ function Measures({
                   <td>
                     <Link to={`/facts?measure_id=${measure.id}`}>{measure.name}</Link>
                   </td>
-                  <td>{measure.unit_class ? titleCase(measure.unit_class) : "—"}</td>
+                  <td>{measure.unit_class ? titleCase(measure.unit_class) : "-"}</td>
                   <td>
-                    {measure.aliases.length > 1 ? (
-                      <div className="chip-row">
-                        {measure.aliases
-                          .filter((alias) => alias !== measure.name)
-                          .slice(0, 4)
-                          .map((alias) => (
-                            <Chip key={alias}>{truncate(alias, 34)}</Chip>
-                          ))}
-                        {measure.aliases.length > 5 ? (
-                          <span className="meta">+{measure.aliases.length - 5} more</span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <span className="meta">—</span>
-                    )}
+                    <AliasList name={measure.name} aliases={measure.aliases} />
                   </td>
                   <td className="numeric">{formatNumber(measure.fact_count, 0)}</td>
                   <td className="numeric">
@@ -181,7 +175,7 @@ function Measures({
                       measure.document_count
                     )}
                   </td>
-                  <td className="meta">{truncate(measure.first_seen_document ?? "—", 34)}</td>
+                  <td className="meta">{truncate(measure.first_seen_document ?? "-", 34)}</td>
                 </tr>
               ))}
             </tbody>
@@ -239,23 +233,12 @@ function Entities({ search, onSearch }: { search: string; onSearch: (value: stri
                   <td>
                     <Link to={`/facts?entity_id=${entity.id}`}>{entity.name}</Link>
                   </td>
-                  <td>{entity.entity_type ? titleCase(entity.entity_type) : "—"}</td>
+                  <td>{entity.entity_type ? titleCase(entity.entity_type) : "-"}</td>
                   <td>
-                    {entity.aliases.length > 1 ? (
-                      <div className="chip-row">
-                        {entity.aliases
-                          .filter((alias) => alias !== entity.name)
-                          .slice(0, 4)
-                          .map((alias) => (
-                            <Chip key={alias}>{truncate(alias, 34)}</Chip>
-                          ))}
-                      </div>
-                    ) : (
-                      <span className="meta">—</span>
-                    )}
+                    <AliasList name={entity.name} aliases={entity.aliases} />
                   </td>
                   <td className="numeric">{formatNumber(entity.fact_count, 0)}</td>
-                  <td className="meta">{truncate(entity.first_seen_document ?? "—", 34)}</td>
+                  <td className="meta">{truncate(entity.first_seen_document ?? "-", 34)}</td>
                 </tr>
               ))}
             </tbody>
@@ -318,7 +301,7 @@ function Qualifiers() {
                   </td>
                   <td className="numeric">{qualifier.value_count}</td>
                   <td className="numeric">{formatNumber(qualifier.fact_count, 0)}</td>
-                  <td className="meta">{truncate(qualifier.first_seen_document ?? "—", 34)}</td>
+                  <td className="meta">{truncate(qualifier.first_seen_document ?? "-", 34)}</td>
                 </tr>
               ))}
             </tbody>
@@ -326,5 +309,30 @@ function Qualifiers() {
         </div>
       ) : null}
     </Panel>
+  );
+}
+
+/**
+ * The surfaces a canonical name was reached by.
+ *
+ * These are the evidence that the registry merged anything at all, so the tail is collapsed
+ * rather than cut off: the previous "+7 more" was a dead end, and the aliases it hid are
+ * exactly what someone checking a merge wants to read.
+ */
+function AliasList({ name, aliases }: { name: string; aliases: string[] }) {
+  const others = aliases.filter((alias) => alias !== name);
+  if (!others.length) return <span className="meta">-</span>;
+  return (
+    <div className="chip-row">
+      <Expandable
+        items={others.map((alias) => (
+          <Chip key={alias} title={alias}>
+            {truncate(alias, 34)}
+          </Chip>
+        ))}
+        initial={4}
+        noun="aliases"
+      />
+    </div>
   );
 }

@@ -18,7 +18,7 @@ export const DIMENSION_LABELS: Record<string, string> = {
   vintage: "Data vintage",
   entity: "Entity",
   definition: "Definition",
-  none: "—",
+  none: "-",
 };
 
 export const PAGE_TYPE_LABELS: Record<string, string> = {
@@ -40,17 +40,17 @@ export function dimensionLabel(dimension: string): string {
 }
 
 export function formatNumber(value: number | null | undefined, maximumFractionDigits = 2): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
   return value.toLocaleString(undefined, { maximumFractionDigits });
 }
 
 export function formatPercent(value: number | null | undefined, digits = 1): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
   return `${(value * 100).toFixed(digits)}%`;
 }
 
 export function formatBytes(bytes: number): string {
-  if (!bytes) return "—";
+  if (!bytes) return "-";
   const units = ["B", "KB", "MB", "GB"];
   let value = bytes;
   let unit = 0;
@@ -62,7 +62,7 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -76,7 +76,7 @@ export function formatPeriod(fact: Pick<Fact, "period_label" | "period_start" | 
       ? fact.period_start
       : `${fact.period_start} to ${fact.period_end}`;
   }
-  return "—";
+  return "-";
 }
 
 export function formatPeriodSpan(
@@ -88,12 +88,16 @@ export function formatPeriodSpan(
 }
 
 export function formatValue(fact: Pick<Fact, "value_text" | "unit_surface">): string {
-  if (!fact.value_text) return "—";
+  if (!fact.value_text) return "-";
   const unit = fact.unit_surface?.trim();
-  if (unit && !fact.value_text.toLowerCase().includes(unit.toLowerCase())) {
-    return `${fact.value_text} ${unit}`;
-  }
-  return fact.value_text;
+  if (!unit) return fact.value_text;
+
+  // Word by word rather than whole-string. "₹40,000.00 million" does not contain the string
+  // "INR million", so the naive check appended it and produced
+  // "₹40,000.00 million INR million": the scale printed twice.
+  const shown = fact.value_text.toLowerCase();
+  const missing = unit.split(/\s+/).filter((word) => word && !shown.includes(word.toLowerCase()));
+  return missing.length ? `${fact.value_text} ${missing.join(" ")}` : fact.value_text;
 }
 
 /**
@@ -104,7 +108,7 @@ export function formatValue(fact: Pick<Fact, "value_text" | "unit_surface">): st
  * magnitude legible while the exact figure stays available in the value column.
  */
 export function formatBaseValue(fact: Pick<Fact, "value_base" | "unit_class" | "currency">): string {
-  if (fact.value_base === null || fact.value_base === undefined) return "—";
+  if (fact.value_base === null || fact.value_base === undefined) return "-";
   const magnitude = Math.abs(fact.value_base);
   const compact =
     magnitude >= 10_000
@@ -122,7 +126,7 @@ export function formatBaseValue(fact: Pick<Fact, "value_base" | "unit_class" | "
 
 export function factLocation(fact: Fact): string {
   const page = fact.source.page_number;
-  if (!page) return fact.source.document_title ?? "—";
+  if (!page) return fact.source.document_title ?? "-";
   const printed = fact.source.printed_label;
   return printed && printed !== String(page) ? `p. ${page} (printed ${printed})` : `p. ${page}`;
 }

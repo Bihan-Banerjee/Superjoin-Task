@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import RelationCard from "../components/RelationCard";
-import { Empty, ErrorNote, Loading, Panel } from "../components/primitives";
+import { Empty, ErrorNote, Expandable, Loading, Panel } from "../components/primitives";
 import { api } from "../lib/api";
 import { formatPercent, titleCase } from "../lib/format";
 import type { CaseBlock, Rejection, Relation } from "../lib/types";
@@ -11,7 +11,7 @@ import type { CaseBlock, Rejection, Relation } from "../lib/types";
  *
  * Everything on this page is queried from the knowledge layer at request time. Ingest a
  * different corpus and the page answers from that corpus, which is the only version of
- * this feature worth building — a fixed list of examples would prove the documents
+ * this feature worth building: a fixed list of examples would prove the documents
  * contained them, not that the system found them.
  */
 export default function Cases() {
@@ -44,9 +44,15 @@ export default function Cases() {
             <FailureCase block={block} />
           ) : block.found ? (
             <div className="case__examples">
-              {(block.examples as Relation[]).map((relation) => (
-                <RelationCard key={relation.id} relation={relation} defaultOpen={false} />
-              ))}
+              {/* Two examples are enough to make the point; the rest are a click away for
+                  anyone who wants to check the selection rather than take it on trust. */}
+              <Expandable
+                initial={2}
+                noun="further examples"
+                items={(block.examples as Relation[]).map((relation) => (
+                  <RelationCard key={relation.id} relation={relation} defaultOpen={false} />
+                ))}
+              />
             </div>
           ) : (
             <Empty>
@@ -76,7 +82,7 @@ function FailureCase({ block }: { block: CaseBlock }) {
           <p>
             Of {(summary.facts_kept + summary.candidates_rejected).toLocaleString()} candidate
             facts proposed across the corpus, {summary.facts_kept.toLocaleString()} were kept
-            and {summary.candidates_rejected.toLocaleString()} were refused — a grounding
+            and {summary.candidates_rejected.toLocaleString()} were refused: a grounding
             pass rate of {formatPercent(summary.grounding_pass_rate)}.
           </p>
           <p>

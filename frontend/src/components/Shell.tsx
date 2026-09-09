@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
+import ThemeToggle from "./ThemeToggle";
 import { api } from "../lib/api";
 import { formatNumber } from "../lib/format";
 
@@ -21,6 +22,10 @@ const SECTIONS: { heading: string; links: { to: string; label: string; count?: k
       { to: "/evaluation", label: "Evaluation" },
     ],
   },
+  {
+    heading: "Setup",
+    links: [{ to: "/configure", label: "Configure" }],
+  },
 ];
 
 interface Counts {
@@ -37,6 +42,7 @@ const TITLES: Record<string, string> = {
   "/cases": "Required cases",
   "/registry": "Registry",
   "/evaluation": "Evaluation",
+  "/configure": "Configure",
 };
 
 export default function Shell() {
@@ -62,10 +68,10 @@ export default function Shell() {
   return (
     <div className="app">
       <nav className="sidebar">
-        <div className="sidebar__brand">
+        <Link to="/" className="sidebar__brand">
           <span className="sidebar__title">Fact Knowledge Layer</span>
           <span className="sidebar__subtitle">Grounded facts across documents</span>
-        </div>
+        </Link>
 
         <div className="sidebar__nav">
           {SECTIONS.map((section) => (
@@ -84,6 +90,7 @@ export default function Shell() {
         </div>
 
         <div className="sidebar__footer">
+          <ThemeToggle compact />
           {health ? (
             <dl className="meta-list">
               <dt>Model</dt>
@@ -103,7 +110,7 @@ export default function Shell() {
           <h1>{title}</h1>
           {health && !health.provider_configured ? (
             <span className="chip" title="Set a provider key in backend/.env to ingest new PDFs">
-              No model configured — browsing only
+              No model configured: browsing only
             </span>
           ) : null}
         </header>

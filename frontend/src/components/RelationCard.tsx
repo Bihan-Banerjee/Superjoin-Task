@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import EvidenceViewer from "./EvidenceViewer";
-import { Chip, Quote } from "./primitives";
+import { Chip, Expandable, Quote } from "./primitives";
 import {
   dimensionLabel,
   factLocation,
@@ -73,12 +73,20 @@ export default function RelationCard({
 
       <p className="relation__explanation">{relation.explanation}</p>
 
+      {/* Expandable puts its control beside the items, and a button is not valid inside a
+          ul, so the reasons are paragraphs in a div rather than list items. */}
       {relation.selected_because?.length ? (
-        <ul className="relation__reasons">
-          {relation.selected_because.map((reason) => (
-            <li key={reason}>{reason}</li>
-          ))}
-        </ul>
+        <div className="relation__reasons">
+          <Expandable
+            initial={3}
+            noun="more reasons"
+            items={relation.selected_because.map((reason) => (
+              <p key={reason} className="relation__reason">
+                {reason}
+              </p>
+            ))}
+          />
+        </div>
       ) : null}
 
       <div className="relation__pair">

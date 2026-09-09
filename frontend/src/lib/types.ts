@@ -328,3 +328,19 @@ export interface Paged<T> {
   relations?: T[];
   rejections?: T[];
 }
+
+export interface SettingField {
+  name: string;
+  kind: "secret" | "choice" | "number" | "toggle";
+  group: string;
+  label: string;
+  help: string;
+  choices?: string[];
+}
+
+export interface SettingsPayload {
+  fields: SettingField[];
+  values: Record<string, unknown>;
+  env_path: string;
+  warnings: string[];
+}

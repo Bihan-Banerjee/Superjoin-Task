@@ -423,7 +423,7 @@
   font-weight: 500;
 }
 
-/* The replaced figure stays fully readable — it is still what its document says, and the
+/* The replaced figure stays fully readable: it is still what its document says, and the
    point of showing both is that a reader can check the replacement against it. Dimming it
    would read as an error rather than as an earlier statement. */
 .relation__side[data-superseded] {
@@ -703,7 +703,7 @@ table.data--compact tbody tr:last-child td {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-3) var(--space-4);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border);
 }
@@ -722,18 +722,61 @@ table.data--compact tbody tr:last-child td {
   color: var(--text-muted);
 }
 
+/* Keys drawn in CSS rather than as inline SVG, so they follow the theme with everything
+   else and the toolbar stays markup a reader can skim. */
+.graph__key {
+  width: 20px;
+  height: 0;
+  border-top: 2px solid var(--border-strong);
+}
+
+.graph__key--corroborates {
+  border-top-color: var(--corroborate);
+}
+.graph__key--contradicts {
+  border-top-color: var(--contradict);
+  border-top-width: 3px;
+}
+.graph__key--reconciled_by_context,
+.graph__key--refines {
+  border-top-color: var(--reconcile);
+}
+.graph__key--supersedes {
+  border-top-color: var(--reconcile);
+  border-top-style: dashed;
+}
+
 .graph__swatch {
   width: 9px;
   height: 9px;
   border-radius: 50%;
 }
 
-.graph__canvas {
-  width: 100%;
-  height: 620px;
+.graph__controls {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.graph__controls .btn.is-active {
+  border-color: var(--border-strong);
+  background: var(--surface-inset);
+  color: var(--text);
+}
+
+.graph__stage {
+  position: relative;
+  height: min(78vh, 760px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+  overflow: hidden;
+}
+
+.graph__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
   touch-action: none;
   cursor: grab;
 }
@@ -742,59 +785,57 @@ table.data--compact tbody tr:last-child td {
   cursor: grabbing;
 }
 
-.graph__edge {
-  stroke: var(--border-strong);
-  stroke-width: 1.2;
-  fill: none;
+/* A quiet note that the layout is still moving, so a reader does not mistake a settling
+   graph for a broken one. */
+.graph__status {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
 }
 
-.graph__edge--corroborates {
-  stroke: var(--corroborate);
+.graph__status::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  vertical-align: middle;
+  animation: graph-pulse 1.1s ease-in-out infinite;
 }
 
-.graph__edge--contradicts {
-  stroke: var(--contradict);
-  stroke-width: 1.8;
+@keyframes graph-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
-.graph__edge--reconciled_by_context,
-.graph__edge--refines,
-.graph__edge--supersedes {
-  stroke: var(--reconcile);
-}
-
-/* Widened only for pointer accuracy — a 1px line is almost impossible to click. */
-.graph__canvas line.graph__edge {
-  stroke-linecap: round;
-  cursor: pointer;
-}
-
-.graph__edge--selected {
-  stroke: var(--accent);
-  stroke-width: 2.6;
-}
-
-.graph__edge--dimmed {
-  opacity: 0.12;
-}
-
-.graph__arrow {
-  fill: var(--reconcile);
-}
-
-.graph__node circle {
-  stroke: var(--surface);
-  stroke-width: 1.5;
-  cursor: pointer;
-}
-
-.graph__node--dimmed {
-  opacity: 0.15;
-}
-
-.graph__label {
-  font-size: 9px;
-  fill: var(--text-muted);
+.graph__tip {
+  position: absolute;
+  right: var(--space-3);
+  top: var(--space-3);
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: var(--text-sm);
   pointer-events: none;
 }
 
@@ -809,8 +850,8 @@ table.data--compact tbody tr:last-child td {
   border-left: 3px solid var(--reconcile);
   border-radius: var(--radius);
   background: var(--surface-raised);
-  font-size: var(--text-sm);
   color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 .view-switch {
@@ -825,12 +866,223 @@ table.data--compact tbody tr:last-child td {
   font-weight: 500;
 }
 
-.export-links {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+@media (prefers-reduced-motion: reduce) {
+  .graph__status::before {
+    animation: none;
+    opacity: 0.8;
+  }
 }
 
-.export-links .btn {
+/* --- Expand and collapse ------------------------------------------------------------- */
+
+.expander {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.expander:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.expander__mark {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
+.clamp__body {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The fade says the content continues rather than ends: without it a hard cut reads as a
+   rendering fault. */
+.clamp__body--cut::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+  pointer-events: none;
+}
+
+/* --- Settings ------------------------------------------------------------------------ */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 280px);
+  gap: var(--space-4);
+  align-items: start;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.setting:last-child {
+  border-bottom: none;
+}
+
+.setting__label label {
+  font-weight: 500;
+}
+
+.setting__help {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 62ch;
+}
+
+.setting__control {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.setting__control .select,
+.setting__control .input {
+  width: 100%;
+}
+
+.setting__secret {
+  display: flex;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.input {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-base);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.input--number {
+  max-width: 120px;
+  font-variant-numeric: tabular-nums;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-inset);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.switch__knob {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.switch--on {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.switch--on .switch__knob {
+  background: var(--accent-bright);
+  transform: translateX(2px);
+}
+
+.settings__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.notice {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.notice p {
+  margin: 0 0 var(--space-2);
+}
+
+.notice p:last-child {
+  margin-bottom: 0;
+}
+
+.notice--warn {
+  border-left-color: var(--reconcile);
+  background: var(--reconcile-soft);
+}
+
+.notice--warn ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+/* base.css lays the brand out as a flex column. It is a link now, so only the link
+   behaviour is added: redeclaring display would collapse the two lines onto one. */
+a.sidebar__brand {
   text-decoration: none;
+  color: inherit;
+}
+
+a.sidebar__brand:hover .sidebar__title {
+  color: var(--accent);
+}
+
+.sidebar__footer .theme-toggle {
+  margin-bottom: var(--space-3);
+}
+
+/* Reasons were list items; they are paragraphs now so the expand control can sit beside
+   them without a button appearing as a child of a ul. */
+.relation__reason {
+  margin: 0 0 2px;
+  padding-left: var(--space-3);
+  position: relative;
+}
+
+.relation__reason::before {
+  content: "·";
+  position: absolute;
+  left: 2px;
+  color: var(--text-faint);
 }

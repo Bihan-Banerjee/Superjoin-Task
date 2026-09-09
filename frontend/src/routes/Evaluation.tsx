@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { ErrorNote, Loading, Panel } from "../components/primitives";
+import { ErrorNote, Expandable, Loading, Panel } from "../components/primitives";
 import { api } from "../lib/api";
 import { formatNumber, formatPercent, titleCase } from "../lib/format";
 
@@ -240,7 +240,7 @@ export default function Evaluation() {
                     <td className="numeric">{row.facts_per_extracted_page.toFixed(2)}</td>
                     <td className="numeric">{formatNumber(row.rejections, 0)}</td>
                     <td className="numeric">
-                      {proposed ? formatPercent(row.facts / proposed, 0) : "—"}
+                      {proposed ? formatPercent(row.facts / proposed, 0) : "-"}
                     </td>
                   </tr>
                 );
@@ -285,24 +285,42 @@ function Rows({ rows }: { rows: [string, string][] }) {
  * whose width is a percentage of the largest value communicates the same thing without a
  * dependency or a canvas.
  */
-function Bars({ title, data }: { title?: string; data: { label: string; count: number }[] }) {
+/**
+ * A distribution, longest bar first.
+ *
+ * The tail is collapsed rather than dropped. These lists are data-dependent: a corpus with
+ * many measures produces a long one: and a page that grows without bound pushes everything
+ * after it off the screen, while silently truncating would hide the smaller categories that
+ * are often the interesting ones.
+ */
+function Bars({
+  title,
+  data,
+  initial = 6,
+}: {
+  title?: string;
+  data: { label: string; count: number }[];
+  initial?: number;
+}) {
   if (!data.length) return null;
   const max = Math.max(...data.map((row) => row.count));
+
+  const rows = data.map((row) => (
+    <div key={row.label} className="bars__row">
+      <span className="bars__label" title={row.label}>
+        {row.label}
+      </span>
+      <span className="bars__track">
+        <span className="bars__fill" style={{ width: `${(row.count / max) * 100}%` }} />
+      </span>
+      <span className="bars__count">{formatNumber(row.count, 0)}</span>
+    </div>
+  ));
 
   return (
     <div className="bars">
       {title ? <h3 className="bars__title">{title}</h3> : null}
-      {data.map((row) => (
-        <div key={row.label} className="bars__row">
-          <span className="bars__label" title={row.label}>
-            {row.label}
-          </span>
-          <span className="bars__track">
-            <span className="bars__fill" style={{ width: `${(row.count / max) * 100}%` }} />
-          </span>
-          <span className="bars__count">{formatNumber(row.count, 0)}</span>
-        </div>
-      ))}
+      <Expandable items={rows} initial={initial} noun="more" />
     </div>
   );
 }
