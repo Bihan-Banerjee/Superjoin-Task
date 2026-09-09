@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     # graph_view_warning() for why.
     enable_graph_view: bool = False
 
+    # Allow the configure page to be used from somewhere other than the machine the server
+    # runs on. Off by default: that page can hold an API key and repoint the pipeline, which
+    # is not something a reader of the layer should be able to do.
+    allow_remote_config: bool = False
+
     # Serve the layer for reading and refuse everything that changes it. Intended for a
     # deployment that shows the committed snapshot to reviewers: with this on, no API key is
     # needed and none should be present, because nothing can start a model call.
@@ -83,7 +88,7 @@ class Settings(BaseSettings):
 
     # Recover text from pages that carry an image and no text layer. Off by default because
     # it needs Tesseract installed and costs roughly a second a page, and because an OCR
-    # quote is a transcription rather than something read from the file — worth having, worth
+    # quote is a transcription rather than something read from the file: worth having, worth
     # knowing about. Scanned pages are *detected and reported* either way.
     enable_ocr: bool = False
     ocr_language: str = "eng"
@@ -137,7 +142,7 @@ class Settings(BaseSettings):
 
         The defaults are safe, but the point of exposing these knobs is that someone with a
         paid key should be able to raise them. Blocking that would be wrong, and letting it
-        fail silently would be worse — a run that spends twenty minutes absorbing 429s looks
+        fail silently would be worse: a run that spends twenty minutes absorbing 429s looks
         identical to a slow model. So over-limit settings are allowed and announced.
 
         The thresholds below are the documented Gemini free-tier ceilings at the time of
@@ -173,7 +178,7 @@ class Settings(BaseSettings):
         is not the solution, and it is right: the work is in how facts are grounded,
         normalised and compared, and a picture of the result can be mistaken for that work
         having been done. The view is also, on this corpus, worse at its job than the table
-        it sits beside — a few hundred nodes laid out by force is a shape, and the question a
+        it sits beside: a few hundred nodes laid out by force is a shape, and the question a
         reviewer actually has is which two figures disagree and why.
 
         It is built anyway because there is one thing it shows that a sorted table cannot:
@@ -184,7 +189,7 @@ class Settings(BaseSettings):
             return None
         return (
             "ENABLE_GRAPH_VIEW is on. The graph is a rendering of the same relation rows the "
-            "table shows, not a separate store and not the reasoning — read it for clusters, "
+            "table shows, not a separate store and not the reasoning: read it for clusters, "
             "and use the table for verdicts and evidence."
         )
 

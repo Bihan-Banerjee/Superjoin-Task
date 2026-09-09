@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import cases, documents, evaluation, export, facts, jobs, relations
+from app.api import settings as settings_api
 from app.config import get_settings
 from app.db.engine import init_database
 
@@ -23,7 +24,7 @@ def use_utf8_console() -> None:
     """Print rupee signs on Windows without crashing.
 
     The console defaults to cp1252 there, and every figure in this corpus is prefixed with a
-    character it cannot encode — so `evaluate.py cases` died on its own output. Replacing
+    character it cannot encode: so `evaluate.py cases` died on its own output. Replacing
     what cannot be encoded is right for a report: losing a glyph is a blemish, losing the
     report is a failure.
     """
@@ -85,6 +86,7 @@ for router in (
     jobs.router,
     evaluation.router,
     export.router,
+    settings_api.router,
 ):
     app.include_router(router)
 
@@ -99,7 +101,7 @@ def health() -> dict[str, Any]:
     """Readiness, plus whether a model is configured.
 
     The interface uses this to tell the difference between an empty knowledge layer and one
-    that cannot ingest because no provider is set up — two situations that otherwise look
+    that cannot ingest because no provider is set up: two situations that otherwise look
     identical from the outside.
     """
     settings = get_settings()
