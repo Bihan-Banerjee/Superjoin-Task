@@ -38,7 +38,7 @@ a two-hop join, which SQLite indexes handle without a second system to run and e
 
 **A vector index (FAISS, sqlite-vec, pgvector).** Vectors are stored as raw float32 blobs
 and searched with a NumPy dot product over one contiguous matrix. At the corpus sizes this
-system will realistically see — thousands to low tens of thousands of facts — an exact
+system will realistically see, thousands to low tens of thousands of facts, an exact
 scan is fast, has no build step, no tuning, no extra dependency, and no risk of an index
 silently going stale after a delete.
 
@@ -93,7 +93,7 @@ The model returns a verbatim `evidence_quote`. The pipeline then checks it indep
 3. Resolve the span to bounding boxes on the rendered page.
 
 Step 2 reads the page and never the model's own quote. Searching the quote as well would
-let a fabricated figure corroborate itself — write any number into the quote and the check
+let a fabricated figure corroborate itself: write any number into the quote and the check
 passes. That was a real defect in this codebase, caught by the end-to-end tests; see
 [Testing](#testing).
 
@@ -105,7 +105,7 @@ extraction-failure case comes from.
 
 Most reconciliations are mechanically decidable. Rules are free, so far more pairs can be
 compared than a model budget allows; reproducible, so the same corpus always yields the same
-relationships; and explainable in a way that matters — "these differ because one is stated
+relationships; and explainable in a way that matters: "these differ because one is stated
 in crore and the other in millions" names a checkable reason.
 
 ```
@@ -133,7 +133,7 @@ answer genuinely depends on reading the evidence.
 The adjudicator receives both verbatim quotes plus roughly 400 characters of surrounding
 page text, both document contexts, and a note saying what the mechanical comparison already
 established. The surrounding text matters: the distinction that explains a difference is
-very often just outside what was extracted — a column header, a footnote, a bracketed
+very often just outside what was extracted: a column header, a footnote, a bracketed
 "(revised)".
 
 **Supersession is decided by rule and never by the model.** `SUPERSEDES` says which of two
@@ -141,7 +141,7 @@ figures a reader should now be using, and that is a claim about the reporting cy
 than about the prose: an outcome settles the estimate that preceded it, a restatement
 replaces what it restates. Both come from the `basis` field, so the verdict is checkable
 against what the documents say they are. Publication dates are deliberately not used as a
-substitute — a later document that disagrees without saying it is revising anything is a
+substitute: a later document that disagrees without saying it is revising anything is a
 contradiction, and the interesting kind, not something to quietly relabel as an update. The
 ranking covers projection and forecast below estimate and provisional, those below actual,
 and restated and revised above all of them; `pro_forma` is unranked, because it is a
@@ -157,10 +157,10 @@ A model shown two statements is influenced by which one it reads first. That is 
 of the technique, not a prompt defect, so every escalated pair is adjudicated twice with the
 two facts swapped and the answers compared.
 
-- Both readings agree — the verdict is kept, with the two confidences averaged.
-- One reading declines the pair as unrelated and the other does not — nothing is recorded.
+- Both readings agree: the verdict is kept, with the two confidences averaged.
+- One reading declines the pair as unrelated and the other does not: nothing is recorded.
   There is no version of "a relationship half the time" worth storing.
-- The readings disagree — the verdict is kept, capped at 0.55 confidence, marked
+- The readings disagree: the verdict is kept, capped at 0.55 confidence, marked
   `order_sensitive` in `relations.raw`, and shown in the UI as *Unsettled on re-reading*
   with what the other ordering said.
 
@@ -176,7 +176,7 @@ and how much was about the order it happened to be presented in.
 
 One limit worth naming: `refines` is directional, and neither the model's schema nor the
 relation row records which fact is the specific one, so a flip between "A refines B" and
-"B refines A" reads as agreement. Period containment — nearly every real instance — is
+"B refines A" reads as agreement. Period containment, nearly every real instance, is
 settled by rule long before it reaches the model.
 
 Cross-checking doubles the cost of the smallest stage in the pipeline and can be turned off
@@ -187,7 +187,7 @@ with `ADJUDICATION_CROSS_CHECK=false`.
 Nothing in the code enumerates what can be measured. A document introduces a phrase, and the
 registry either recognises it or admits it as a new canonical measure. Resolution escalates
 cheapest-first: exact alias, then embedding nearest-neighbour, then a batched model call
-only for the band in between (cosine 0.80 to 0.94, tuned against observed pairs — "revenue
+only for the band in between (cosine 0.80 to 0.94, tuned against observed pairs: "revenue
 from services" against "service revenue" scores 0.95, against "operating expenses" 0.74).
 
 Two guards keep the registry from collapsing:
@@ -281,7 +281,7 @@ to grow, and an enum change in SQLite means a table rewrite for what is really a
 change does not strand a database that has already been ingested into. Additive only:
 nothing is dropped, renamed or retyped, because those need a decision about existing rows
 that a function running silently at startup has no business making. The reason it matters is
-cost — a full re-ingest is the one operation here that spends real money.
+cost: a full re-ingest is the one operation here that spends real money.
 
 ### Detecting the same content in a different file
 
@@ -289,7 +289,7 @@ Upload refuses a byte-identical PDF on its sha256. That catches uploading the sa
 twice and nothing else; the same content routinely arrives as a different file, whether
 re-exported by another tool, re-downloaded after a cosmetic revision, or excerpted from
 something already ingested. After parsing, a document's page text hashes are compared
-against every other document's, over pages of at least 400 characters — cover sheets and
+against every other document's, over pages of at least 400 characters: cover sheets and
 dividers are identical across unrelated filings from the same publisher, and counting them
 would report everything as a duplicate of everything.
 
@@ -299,7 +299,7 @@ contained in it while sharing a tenth of its pages. Above `NEAR_DUPLICATE_RATIO`
 document is linked to the one it repeats and the Documents page says so.
 
 Nothing is skipped on the strength of it. A revised filing shares most of its pages with the
-version it replaces, and the handful that changed are the reason to ingest it — so this
+version it replaces, and the handful that changed are the reason to ingest it: so this
 reports and the reader decides. Re-reading the shared pages is nearly free in any case,
 since the response cache is keyed on prompt content and an unchanged page is served from
 disk rather than re-extracted.
@@ -333,11 +333,11 @@ flowchart TD
 The two outputs that matter are `relations` and `rejections`. The first is what the system
 found; the second is what it refused to assert, and is the honest measure of the first.
 
-**1. Parse** (`parse.py`) — PyMuPDF per page: raw text stored verbatim, words with bounding
+**1. Parse** (`parse.py`): PyMuPDF per page: raw text stored verbatim, words with bounding
 boxes, tables, image coverage, vector drawing count, ruled-line count, printed page label,
 and any per-page unit declaration found by regex.
 
-**2. Classify** (`classify.py`) — routes each page to the right layout treatment and decides
+**2. Classify** (`classify.py`): routes each page to the right layout treatment and decides
 whether it is worth a model call at all. All signals are structural: text density, numeric
 token share, sentence-terminator density, table coverage, image area, vector density, and a
 dot-leader score for contents pages. Nothing keys off a filename, a publisher, or a phrase
@@ -350,23 +350,23 @@ The last four are skipped for extraction and still indexed for search.
 layer and substantial image coverage was produced by a scanner or a print-to-image; a page
 with nothing on it is blank. Both yield no facts, but only one of them is a limitation, and a
 document made entirely of scans would otherwise ingest "successfully" with nothing extracted
-and no explanation — the failure most easily mistaken for a bug in extraction.
+and no explanation: the failure most easily mistaken for a bug in extraction.
 
 The count of unread pages, and how many of them OCR recovered, is stored on the document and
 shown on the Documents page. With `ENABLE_OCR=true` those pages are re-read through Tesseract
-and everything downstream — words, boxes, quote location, highlighting — works against the
+and everything downstream (words, boxes, quote location, highlighting) works against the
 transcription exactly as it would against a real text layer. A page read that way is flagged,
 because an OCR quote is a transcription and can be wrong in ways a text layer cannot. If
 Tesseract is missing the pass stops at the first page and the document still ingests, with
 its scanned pages reported as unread rather than the whole run failing.
 
-**3. Layout** (`layout.py`) — the part with the most work in it, because the PDF text layer
+**3. Layout** (`layout.py`): the part with the most work in it, because the PDF text layer
 discards the spatial relationships that make a page readable.
 
 *Prose and tables.* Columns are found by an occupancy histogram over x, looking for a
 vertical corridor that is far emptier than the text either side. The floor is a fraction of
 the page's own typical column density rather than an absolute number, because a gutter is
-rarely empty — a centred box heading or a full-width footnote crosses it. Lines that
+rarely empty: a centred box heading or a full-width footnote crosses it. Lines that
 genuinely span the measure are detected by continuity (no gutter-sized gap inside them) and
 emitted separately, so a running head is not cut into "ANNUAL" and "REPORT 2024-25".
 
@@ -375,7 +375,7 @@ plot area and its axis label at the bottom, often 300 points away, so any thresh
 enough to join them also merges the chart with its neighbours. Instead the page is split
 into vertical panels (with header and footer bands excluded from corridor detection, since
 full-width footnotes weld every panel together), and items sharing a horizontal position are
-grouped and read downwards — which is the relationship the chart was drawn with.
+grouped and read downwards: which is the relationship the chart was drawn with.
 
 Two views are emitted because neither is sufficient alone. Reading order keeps titles and
 footnotes intact; alignment groups recover which number belongs to which bar. Page 9 of the
@@ -391,7 +391,7 @@ to, among others,
 [x 238-328] 8,142 (y=139) | 10% (y=170) | 7% (y=194) | 19% (y=232) | 62% (y=348) | FY24 (y=452)
 ```
 
-**4. Profile** (`extract.py`) — one call over the front matter plus any page carrying a unit
+**4. Profile** (`extract.py`): one call over the front matter plus any page carrying a unit
 declaration, establishing publisher, document type, as-of date, reporting basis, fiscal
 convention and default currency and scale. The declaration matters most: it is what makes
 ₹ million and ₹ crore reconcilable. Declarations observed in the page text override the
@@ -426,10 +426,10 @@ away. Rows whose stub cell is blank are left in the grid only: inheriting the la
 would attach figures to the wrong line item, and a spacer row is not worth a wrong fact.
 Output is capped at 200 addressed cells per table so a long statement of accounts cannot
 crowd out the rest of the page. The prompt states that these lines are assembled for the
-reader and must not be quoted as evidence, since they do not appear on the page — a quote
+reader and must not be quoted as evidence, since they do not appear on the page: a quote
 taken from one would fail grounding and lose the fact.
 
-**5. Extract** (`extract.py`) — pages are batched by character budget (9,000) rather than by
+**5. Extract** (`extract.py`): pages are batched by character budget (9,000) rather than by
 count, so requests stay uniform whatever the document's density. Chart pages are always sent
 alone, with a rendered PNG when a vision model is configured, because mixing other pages
 into that request invites the model to confuse them.
@@ -438,7 +438,7 @@ into that request invites the model to confuse them.
 licenses something the text-only instructions forbid: attaching a value to a series on
 evidence that is not in the text layer at all. A stacked bar's segments carry no label in the
 text, and their order in the extracted text is the order they were drawn rather than the
-order of the legend, so a text-only reader has no way in — this was the largest documented
+order of the legend, so a text-only reader has no way in: this was the largest documented
 gap in the first run. Where a segment's colour matches a legend swatch, the model may attach
 the value to that series and must record what it matched in an `attribution` field, which is
 stored on the fact in `raw`.
@@ -447,9 +447,9 @@ The licence is narrow and the caveat is real: the value itself is still read fro
 and this is the one claim in the system that no later check can verify against the page.
 Where two segments are close in colour, where the legend has more entries than the bar has
 segments, or where the rendering is too small to be sure, the instruction is still
-`unattributed` — a value filed under the wrong series is worse than one filed under none.
+`unattributed`: a value filed under the wrong series is worse than one filed under none.
 
-**6. Ground** (`ground.py`) — as described above. Rejection reasons: `quote_not_found`,
+**6. Ground** (`ground.py`): as described above. Rejection reasons: `quote_not_found`,
 `value_absent_from_quote`, `ambiguous_short_quote`, `quote_too_short`, `subject_unresolved`,
 `predicate_unresolved`, `missing_required_fields`, `low_confidence`,
 `duplicate_of_existing_fact`, `unattributed_by_model`, `extraction_call_failed`.
@@ -460,8 +460,8 @@ stating because both were wrong in an instructive way.
 *Short quotes are tested for uniqueness, not length.* The first version required at least two
 tokens. That rejected 51 correct facts from one metrics slide, where the evidence genuinely is
 a lone number in a table cell because the label sits in a different column and no contiguous
-run of page text contains both. Length was a proxy for what actually matters — whether the
-quote pins the value to one place — so the rule became a uniqueness test. A short quote is
+run of page text contains both. Length was a proxy for what actually matters: whether the
+quote pins the value to one place: so the rule became a uniqueness test. A short quote is
 accepted when it occurs exactly once on the page and rejected as `ambiguous_short_quote` when
 it does not, which admits "18,540" beside a "Pin-code reach" label and still refuses a bare
 "94" that appears five times.
@@ -470,13 +470,13 @@ it does not, which admits "18,540" beside a "Pin-code reach" label and still ref
 spatially separate items with a middle dot so a model can see they are distinct, and a model
 will occasionally quote a whole row as evidence for one cell. That string exists on screen but
 not on the page. When a quote fails to locate, it is split on the rendition separators and the
-fragments are tried — preferring the one containing the value. Preferring the longest, which
+fragments are tried: preferring the one containing the value. Preferring the longest, which
 was the first implementation, lands on a neighbouring cell and rejects a fact whose value is
 genuinely present.
 
 Together these took grounding from 45% to 93% of proposed facts on the earnings deck.
 
-**7. Normalise** (`normalize.py`) — units, scales, currencies, periods, qualifiers and
+**7. Normalise** (`normalize.py`): units, scales, currencies, periods, qualifiers and
 basis. Unit resolution follows specificity: a unit beside the number beats a page
 declaration, which beats a document default.
 
@@ -484,21 +484,21 @@ Inheritance of the declared currency and scale is deliberately asymmetric. A dec
 like "all amounts in Indian Rupees in million" is a statement about *amounts*. The currency
 is inherited only where nothing else established one, so it is never pushed onto a
 percentage or a shipment count. The scale is inherited by any monetary figure that did not
-carry its own — including one whose currency the extractor did report, which is the common
+carry its own: including one whose currency the extractor did report, which is the common
 case for a bare figure under a "(₹ in million)" heading.
 
 Categorical facts are never scanned for digits. "Plot 5, Sector 44, Gurugram" contains
 numbers, and reading them turns an address into a quantity that then gets compared
 arithmetically against other quantities.
 
-**8. Register** (`canonicalize.py`) — measures, entities and qualifier keys, as described
+**8. Register** (`canonicalize.py`): measures, entities and qualifier keys, as described
 above. Entity resolution additionally strips legal-form suffixes, so "Delhivery Limited" and
 "Delhivery Ltd" resolve without a model call.
 
-**9. Link** (`candidates.py`, `reconcile.py`, `adjudicate.py`) — candidate pairs come from
+**9. Link** (`candidates.py`, `reconcile.py`, `adjudicate.py`): candidate pairs come from
 three routes unioned: shared canonical measure, vector neighbourhood (cosine ≥ 0.82, top 12),
-and FTS lexical overlap. Pairs on the same page of the same document are dropped — two
-figures printed side by side are usually one statement read twice — and per-fact fan-out is
+and FTS lexical overlap. Pairs on the same page of the same document are dropped: two
+figures printed side by side are usually one statement read twice: and per-fact fan-out is
 capped at 40 so one popular measure cannot dominate an ingest.
 
 Only new facts are paired against the corpus, which is what makes ingest incremental.
@@ -511,7 +511,7 @@ Only new facts are paired against the corpus, which is what makes ingest increme
 arithmetic, no filling in a unit from world knowledge, no completing a half-remembered
 figure. The prompts state that output will be verified, because a model told its citations
 will be checked is measurably more conservative about inventing them. Values it cannot
-attribute go into an `unattributed` list, which the pipeline turns into rejections — an
+attribute go into an `unattributed` list, which the pipeline turns into rejections: an
 honest "I could not tell" is a correct answer, and recording it stops a page looking as
 though it held nothing.
 
@@ -551,7 +551,7 @@ candidate gave:
 | `gemini-3.1-flash-lite` | no limit reached at 10 | shortens to `revenue` |
 
 Twenty requests a day cannot process a 500-page corpus, so extraction runs at volume on
-flash-lite and adjudication — a small fraction of the calls — keeps the stronger model. The
+flash-lite and adjudication, a small fraction of the calls, keeps the stronger model. The
 shortening problem was addressed in the prompt and given a deterministic backstop in
 normalisation, since a measure name that silently absorbs or drops a qualifier fragments the
 registry.
@@ -562,8 +562,8 @@ The assignment asks for large PDFs without significant performance issues. Four 
 measured on the 511-page starter corpus.
 
 `scripts/benchmark.py` reproduces these numbers offline with no model calls, and writes
-`docs/benchmarks.md`. On the starter corpus the local stages — parse, classify, layout, the
-whole cost of ingest that is not a model call — run at **138 ms/page, 70.5 s for 511 pages
+`docs/benchmarks.md`. On the starter corpus the local stages: parse, classify, layout, the
+whole cost of ingest that is not a model call: run at **138 ms/page, 70.5 s for 511 pages
 across six documents**, with the slowest document at 215 ms/page. Model calls dominate
 everything else, which is why the cache matters: the second full run of the corpus took
 1,806 s against 5,111 s, with 451 of 587 calls served from disk.
@@ -595,7 +595,7 @@ releases the session before the model calls.
 ### The registry was the real bottleneck
 
 The first full run over a hundred-page filing spent twenty minutes in the registry stage and
-produced nothing. Three separate causes, all of the same shape — work repeated per fact that
+produced nothing. Three separate causes, all of the same shape: work repeated per fact that
 belongs per distinct value:
 
 - `EntityRegistry.resolve` was called once per fact rather than once per distinct subject. A
@@ -614,7 +614,7 @@ test suite from 37s to 19s.
 
 Quotas are enforced per model, and the two this pipeline uses differ by a factor of three.
 A single client-wide budget either throttles extraction down to the adjudication model's
-limit or drives adjudication into a rejection on every call — which then costs a full
+limit or drives adjudication into a rejection on every call: which then costs a full
 quota-window backoff each time. Each model gets its own limiter.
 
 ## API
@@ -669,10 +669,46 @@ A review workbench: dense tables, verbatim quotes, side-by-side comparisons. Bor
 than shadows, one restrained accent, 13px base, tabular numerals. Optimised for reading a lot
 of text and numbers accurately.
 
-Six views: **Documents** (upload, streaming progress, per-document counts), **Facts**
+A **landing page** sits at `/`, outside the workbench chrome. It is the one surface allowed
+visual weight, because it has to explain a fairly abstract idea to someone who has not used
+the tool: but it explains it with the system's own headline example (₹8,142 crore against
+81,415 million, resolving to one amount) rather than with an abstraction, and its counters are
+read from `/api/evaluation` rather than written into the markup. If the API is unreachable the
+counters do not render at all; a front page that invents plausible numbers when the backend is
+down would undermine the one claim the project rests on.
+
+Long lists inside the workbench collapse rather than truncate. Rejection reasons, measure
+aliases, selection rationales and case examples are all data-dependent, so rendering them in
+full pushes the rest of a page off the screen while cutting them silently hides evidence. The
+tail is folded behind a control that says how much is behind it: the Registry's aliases used
+to end in a dead "+7 more", and those aliases are exactly what someone auditing a merge wants
+to read.
+
+Seven views: **Documents** (upload, streaming progress, per-document counts), **Facts**
 (filterable table with an evidence panel), **Relations** (both facts side by side with the
 differing fields marked), **Cases** (the four required cases), **Registry** (measures,
-entities, qualifier keys), **Evaluation** (metrics from the last run).
+entities, qualifier keys), **Evaluation** (metrics from the last run), and **Configure**.
+
+### Configure, and what it refuses
+
+`/configure` edits `backend/.env` from the interface. That means an endpoint which writes a
+file and handles API keys, so most of its design is refusal:
+
+- **An allow-list, not a pass-through.** Only the settings named in `app/api/settings.py` can
+  be written; anything else is a 400. A caller cannot reach `DATABASE_URL`.
+- **Secrets are write-only.** They can be set and cleared, never read back. `GET` returns
+  `{configured, hint}` where the hint is the last four characters: enough to tell two keys
+  apart, not enough to use one. The page never puts a stored key into an input.
+- **Loopback only.** The rest of the API is safe to show a reader; this part can repoint the
+  pipeline at another endpoint and spend someone's credit, so remote callers are refused
+  unless `ALLOW_REMOTE_CONFIG=true`.
+- **Nothing at all under `READ_ONLY`.** A deployment serving a snapshot has no business
+  holding a key, and the page explains that rather than reporting an error.
+
+Writes are line-by-line rather than regenerated, so comments, ordering and settings this
+module knows nothing about survive being edited by a machine. Changes apply to work started
+afterwards; a job already running keeps the settings it began with, because a run that
+changed provider halfway through would be neither reproducible nor explicable.
 
 ### The graph view, and why it ships switched off
 
@@ -681,7 +717,7 @@ relations as edges, coloured by document and by verdict.
 
 It is off by default and that is the substantive decision, not an oversight. The brief this
 project answers says plainly that a graph database or a visualisation is not the solution,
-and it is right — the work is in how facts are grounded, normalised and compared, and a
+and it is right: the work is in how facts are grounded, normalised and compared, and a
 picture of the result is easily mistaken for that work having been done. On this corpus the
 graph is also simply worse at the job: a few hundred nodes laid out by force is a shape, and
 the question a reviewer has is which two figures disagree and why, which the table answers
@@ -692,7 +728,7 @@ several publishers all describe, and whether the edges inside such a cluster agr
 other. A tight cluster of green with one red edge through it is a real finding, and it is
 genuinely hard to see in a list.
 
-So it is built, tested, and switched off, and turning it on says out loud what it is — a
+So it is built, tested, and switched off, and turning it on says out loud what it is: a
 line in the server log at startup and a note above the graph itself.
 
 Four properties keep it honest:
@@ -701,8 +737,8 @@ Four properties keep it honest:
   rows through the same filter builder the table uses, so the two cannot drift. There is no
   graph database, no second ingest, and no edge that is not a row.
 - **It is not shipped when it is off.** The endpoint returns 404 rather than quietly serving
-  data the deployment declined, and the layout code is a lazily imported chunk — 19.6 kB, 7.7
-  kB gzipped — that the browser never fetches. Enabling the view costs 2.2 kB in the main
+  data the deployment declined, and the layout code is a lazily imported chunk: 19.6 kB, 7.7
+  kB gzipped: that the browser never fetches. Enabling the view costs 2.2 kB in the main
   bundle for the toggle.
 - **Truncation keeps the disagreements.** Edges are taken in severity order, so a capped
   graph loses the least interesting relations rather than an arbitrary slice, and the footer
@@ -712,6 +748,34 @@ Four properties keep it honest:
 
 Clicking an edge opens the same relation card the table shows, with both quotes and the
 reasoning. The graph is a way into the evidence, never a substitute for it.
+
+**It is drawn on a canvas, not as SVG.** The first version pre-ran the force simulation for a
+fixed number of ticks and froze the result into DOM nodes. It looked inert and behaved worse:
+there was nothing to drag, zooming re-laid-out nothing, and several hundred elements made
+every interaction stutter. Redrawing the whole scene each frame costs a fraction of that, and
+it is what buys a settle you can watch, live dragging, and panning that keeps up with the
+cursor. Node positions live in refs rather than React state, because putting them in state
+would re-render the tree sixty times a second to paint pixels React does not own.
+
+Four things do most of the work for legibility:
+
+- **The collision radius includes room for a label**, so text has somewhere to go before it is
+  drawn.
+- **Labels are placed greedily by degree.** Each candidate is measured, turned into a
+  rectangle, and drawn only if it clears every label already placed. The best-connected node
+  in a crowded area keeps its name and the rest go unlabelled rather than printing on top of
+  one another. Labels are drawn in screen space, so they stay the same size at every zoom.
+- **Charge is capped by distance.** Unbounded repulsion pushes every disconnected cluster away
+  from every other until the layout is a thin scatter several screens wide.
+- **Edges bow slightly.** Two facts joined by more than one relation would otherwise draw
+  exactly on top of each other.
+
+Hovering a node dims everything it is not connected to, which is the difference between a
+hairball and a readable neighbourhood. Dragging pins a node where it is dropped, since a
+reader who arranges the graph expects it to stay arranged; double-clicking releases every pin
+and lets it settle again. Zoom keeps the point under the cursor fixed. Colours are read from
+the stylesheet and refreshed when the theme changes, so the canvas follows light and dark with
+everything else.
 
 **Page rendering is server-side.** pdf.js was the obvious choice and was dropped. Rendering
 with PyMuPDF costs a round trip and buys three things: the highlight rectangles are in the
@@ -728,8 +792,8 @@ percentages of the page box, so they stay aligned at any rendered width.
 tolerance behaviour, fuzzy quote matching against hyphenated and ligatured text, grounding
 rejections, normalisation precedence, and the full reconciliation rule table.
 
-**End-to-end tests** run the real pipeline — parsing, layout, classification, grounding,
-normalisation, the registry, candidate generation and the rule engine — against a stub model.
+**End-to-end tests** run the real pipeline: parsing, layout, classification, grounding,
+normalisation, the registry, candidate generation and the rule engine: against a stub model.
 Only the model is stubbed, which is what makes exact assertions possible; a real model would
 make the expected fact count a moving target.
 
@@ -745,7 +809,7 @@ Those tests found four defects that would all have failed on the first live run:
    figure validated against itself. This was the single most important guard in the system
    and it was decorative. It now reads only the source text.
 2. **A page-declared scale was skipped whenever the extractor also reported a currency**,
-   leaving those figures a million times too small — and that is the common case for the
+   leaving those figures a million times too small: and that is the common case for the
    Delhivery annual report, the exact document the headline reconciliation depends on.
 3. **Categorical values were scanned for digits**, so an address became a quantity of 220
    somethings and entered numeric comparison.
@@ -761,30 +825,30 @@ both had been producing wrong output quietly.
 
 **A count inheriting the document's currency.** The annual report declares "all amounts in
 Indian Rupees in million". That declaration was being applied to any figure that arrived
-without a unit — including "18,793 pin codes covered", which came out as `1.879e13 INR
+without a unit: including "18,793 pin codes covered", which came out as `1.879e13 INR
 billion`. A figure no document contains, competing with real money in comparisons.
 
 The fix inverts the default. Currency and scale are inherited only when there is some reason
 to believe the figure is an amount: a currency the extractor or the page already established,
 or a measure that names one. A measure that does not is left as a bare number. The money
-vocabulary is general finance language rather than anything drawn from this corpus — the same
+vocabulary is general finance language rather than anything drawn from this corpus: the same
 list decides correctly for a water utility's capital expenditure, which is what the
 generalisation test checks.
 
 A consequence worth naming: a number nothing labelled now normalises as dimensionless rather
 than resolving to nothing at all, because otherwise every bare count would become
-incomparable — and counts are exactly what is left once the currency stops being pushed onto
+incomparable: and counts are exactly what is left once the currency stops being pushed onto
 figures that are not amounts. It is still recorded as `unit_unresolved`, since "no unit was
 established" and "the unit is one" are different claims.
 
 **The rounding band taken from the wrong side.** `rounding_tolerance` widens the agreement
 band to match how coarsely the coarser figure was rounded. It was picking that figure with
-`min(abs(left), abs(right))` — the numerically smaller value — but coarseness is a property
+`min(abs(left), abs(right))`: the numerically smaller value: but coarseness is a property
 of the rounding step, not of magnitude.
 
 "76 Cr" and "₹758Mn" are one figure written twice, at two and three significant figures. 76
 crore is 760 million, so the *larger* value is the coarser one; the band was set from the
-precise side and the pair was reported as a genuine contradiction — the only contradiction in
+precise side and the pair was reported as a genuine contradiction: the only contradiction in
 the entire corpus, and therefore the one the required case would have been built from. It now
 takes the larger of the two rounding steps.
 
@@ -795,16 +859,15 @@ graph view and reading the pair it opened.
 
 Two facts from the Delhivery prospectus were being reported as contradicting: investments in
 technology of ₹2,418.03 million and ₹1,288.17 million, "a difference of 46.7%". The card
-showed both period labels — *nine months period ended December 31, **2021*** and *nine months
-period ended December 31, **2020*** — and, underneath, both normalised to the same interval:
+showed both period labels: *nine months period ended December 31, **2021*** and *nine months
+period ended December 31, **2020***: and, underneath, both normalised to the same interval:
 `2021-12-01 → 2021-12-31`.
 
 Two independent bugs stacked up to produce that:
 
 1. `_PERIOD_ENDED_PATTERN` matched `nine months ended …` but not `nine months **period**
    ended …`, so the second form fell through the multi-month matcher entirely.
-2. It then reached the month-and-year matcher, which took the first number after the month —
-   the **day**, 31 — and expanded it as a two-digit year into **2031**.
+2. It then reached the month-and-year matcher, which took the first number after the month: the **day**, 31: and expanded it as a two-digit year into **2031**.
 
 So every label of that shape collapsed onto December 2031, a month no document mentions.
 Facts from different years then compared as though they covered identical periods, and the
@@ -828,8 +891,8 @@ there. The bug was equally visible in the table; nobody had looked at that row.
 Worth recording because the failure was circular and took a while to see.
 
 `LlmClient` consults two caches: the committed `seed/replay` recordings, always enabled, and
-a runtime cache that ingest writes to. The test suite used to share that runtime cache — a
-defect fixed by disabling it in the tests — but two responses invented by a stub provider in
+a runtime cache that ingest writes to. The test suite used to share that runtime cache: a
+defect fixed by disabling it in the tests: but two responses invented by a stub provider in
 `test_adjudicate.py` had already been written there. `snapshot.py export` then copied the
 runtime cache wholesale into `seed/replay`.
 
@@ -838,7 +901,7 @@ replay cache before the stub was reached, so `provider.calls` was zero, the call
 assertions failed, and the verdict came from disk rather than from the object under test. The
 snapshot was serving the tests their own output.
 
-The export now copies a recording only when it names a real provider — an allow-list, so a
+The export now copies a recording only when it names a real provider: an allow-list, so a
 stub added later is excluded by default rather than having to be remembered. The two polluted
 entries were purged from both caches, and a test covers the filter.
 
@@ -846,8 +909,7 @@ entries were purged from both caches, and a test covers the filter.
 
 `tests/test_generalisation.py` ingests a document deliberately unlike anything the project
 was built against: a water utility in another country, a fiscal year running October to
-September, amounts in US dollars and billions, and measures that are not financial at all —
-megalitres per day, connections, non-revenue water.
+September, amounts in US dollars and billions, and measures that are not financial at all: megalitres per day, connections, non-revenue water.
 
 It exists because every other test in the suite uses Indian corporate filings, which is the
 corpus the thresholds were tuned on. Without it the suite could pass while the pipeline
@@ -862,7 +924,7 @@ it does on a filing. No production code changed to make any of it pass.
 ## Configuration
 
 All configuration is environment variables; see `.env.example`. Nothing is required to browse
-a restored snapshot — only to process new PDFs.
+a restored snapshot: only to process new PDFs.
 
 Concurrency and request rate default to values inside the Gemini free tier (3 in flight, 10
 requests per minute). Raising them is allowed and not blocked, but the settings are checked
@@ -878,7 +940,7 @@ Two settings trade cost against confidence and are worth knowing about:
 | Variable | Default | What it buys |
 | --- | --- | --- |
 | `ADJUDICATION_CROSS_CHECK` | `true` | Reads every escalated pair a second time with the facts swapped. Doubles the cost of the smallest stage; turns an unverified model verdict into a measured one. |
-| `NEAR_DUPLICATE_RATIO` | `0.9` | How much of a document's substantive text must already be in the layer before it is flagged as repeating another. High on purpose — a false flag on a genuinely new filing costs more than a missed duplicate. |
+| `NEAR_DUPLICATE_RATIO` | `0.9` | How much of a document's substantive text must already be in the layer before it is flagged as repeating another. High on purpose: a false flag on a genuinely new filing costs more than a missed duplicate. |
 | `ENABLE_GRAPH_VIEW` | `false` | Adds a node-graph rendering of the relation table. See below for why it is off. |
 | `READ_ONLY` | `false` | Serves the layer and refuses every write. For a deployment showing the snapshot to reviewers: no key needed, none should be present. |
 | `ENABLE_OCR` | `false` | Reads scanned pages through Tesseract. Detection of them is unconditional; only the reading is opt-in. |
