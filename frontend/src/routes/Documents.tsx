@@ -67,7 +67,7 @@ export default function Documents() {
     onSuccess: (result) => {
       if (result.duplicate) {
         setNotice(
-          `${result.document.filename} is already in the knowledge layer — the same file content was uploaded before.`,
+          `${result.document.filename} is already in the knowledge layer: the same file content was uploaded before.`,
         );
         return;
       }
@@ -113,7 +113,7 @@ export default function Documents() {
             ))}
           </ul>
           <p className="meta">
-            Ingest will still run — requests that are rejected are retried with backoff.
+            Ingest will still run: requests that are rejected are retried with backoff.
             Lower <code>LLM_RATE_LIMIT_RPM</code> and <code>LLM_CONCURRENCY</code> in{" "}
             <code>backend/.env</code> to avoid it.
           </p>
@@ -121,14 +121,14 @@ export default function Documents() {
       ) : null}
       <p className="page__intro">
         Upload a PDF and it is parsed, read page by page, and compared against everything
-        already here. Nothing is specific to the sample corpus — the conventions each
+        already here. Nothing is specific to the sample corpus: the conventions each
         document follows are read from the document itself.
       </p>
 
       {readOnly ? (
         <p className="graph__notice">
           This deployment is read-only. It serves a prepared snapshot, so documents cannot be
-          uploaded, reprocessed or deleted — and no model key is needed or present.
+          uploaded, reprocessed or deleted: and no model key is needed or present.
         </p>
       ) : (
       <div
@@ -282,11 +282,11 @@ function DocumentRow({
           </div>
         ) : null}
       </td>
-      <td>{document.publisher ?? "—"}</td>
-      <td>{document.doc_type ? titleCase(document.doc_type) : "—"}</td>
-      <td>{document.period_label ?? "—"}</td>
+      <td>{document.publisher ?? "-"}</td>
+      <td>{document.doc_type ? titleCase(document.doc_type) : "-"}</td>
+      <td>{document.period_label ?? "-"}</td>
       <td>
-        {denomination || "—"}
+        {denomination || "-"}
         <div className="meta">{titleCase(document.fiscal_convention)} year</div>
       </td>
       <td className="numeric">{formatNumber(document.page_count, 0)}</td>
@@ -324,7 +324,7 @@ function DocumentRow({
 // re-downloaded is caught even though its bytes differ.
 const REPEAT_HINT =
   "Most of this document's text was already in the layer when it was added. " +
-  "Nothing was skipped — the pages that differ are still the reason to keep it.";
+  "Nothing was skipped: the pages that differ are still the reason to keep it.";
 
 const SCANNED_HINT =
   "These pages carry an image with no text behind it. Facts cannot be extracted from them " +

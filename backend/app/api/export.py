@@ -115,18 +115,28 @@ def _fact_rows(session: Session, document_id: int | None) -> Iterator[dict[str, 
     if document_id is not None:
         statement = statement.where(Fact.document_id == document_id)
 
-    documents = {row.id: row for row in session.scalars(select(Document))}
-    pages = {row.id: row for row in session.scalars(select(Page))}
+    # Only the columns the rows actually use. Selecting whole Page objects pulls every
+    # page's full text into memory to read a page number off it.
+    documents = {
+        row[0]: row
+        for row in session.execute(
+            select(Document.id, Document.title, Document.filename, Document.publisher)
+        )
+    }
+    pages = {
+        row[0]: row
+        for row in session.execute(select(Page.id, Page.page_number, Page.printed_label))
+    }
 
     for fact in session.scalars(statement):
         document = documents.get(fact.document_id)
         page = pages.get(fact.page_id)
         yield {
             "fact_id": fact.id,
-            "document": (document.title or document.filename) if document else None,
-            "publisher": document.publisher if document else None,
-            "page": page.page_number if page else None,
-            "printed_page": page.printed_label if page else None,
+            "document": (document[1] or document[2]) if document else None,
+            "publisher": document[3] if document else None,
+            "page": page[1] if page else None,
+            "printed_page": page[2] if page else None,
             "kind": fact.kind,
             "subject": fact.subject_surface,
             "measure": fact.predicate_surface,
@@ -158,23 +168,31 @@ def _relation_rows(session: Session, document_id: int | None) -> Iterator[dict[s
         .order_by(Relation.severity.desc(), Relation.id)
         .execution_options(yield_per=CHUNK)
     )
-    facts = {row.id: row for row in session.scalars(select(Fact))}
-    documents = {row.id: row for row in session.scalars(select(Document))}
+    facts = {
+        row[0]: row
+        for row in session.execute(
+            select(Fact.id, Fact.document_id, Fact.value_text, Fact.period_label)
+        )
+    }
+    documents = {
+        row[0]: row
+        for row in session.execute(select(Document.id, Document.title, Document.filename))
+    }
 
     def describe(fact_id: int) -> tuple[str | None, str | None, str | None]:
         fact = facts.get(fact_id)
         if fact is None:
             return None, None, None
-        document = documents.get(fact.document_id)
-        title = (document.title or document.filename) if document else None
-        return title, fact.value_text, fact.period_label
+        document = documents.get(fact[1])
+        title = (document[1] or document[2]) if document else None
+        return title, fact[2], fact[3]
 
     for relation in session.scalars(statement):
         left = facts.get(relation.left_fact_id)
         right = facts.get(relation.right_fact_id)
         if document_id is not None and document_id not in {
-            getattr(left, "document_id", None),
-            getattr(right, "document_id", None),
+            left[1] if left else None,
+            right[1] if right else None,
         }:
             continue
         left_document, left_value, left_period = describe(relation.left_fact_id)
