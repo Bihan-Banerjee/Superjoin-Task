@@ -42,7 +42,7 @@ from app.db.models import (  # noqa: E402
     Rejection,
     Relation,
 )
-from app.main import configure_logging  # noqa: E402
+from app.main import configure_logging, use_utf8_console  # noqa: E402
 
 logger = logging.getLogger("snapshot")
 
@@ -213,7 +213,24 @@ def do_export(include_responses: bool) -> int:
     return 0
 
 
+# Providers whose recorded answers are worth shipping. An allow-list rather than a deny-list,
+# so a stub added to the test suite later is excluded by default instead of having to be
+# remembered.
+_REAL_PROVIDERS = frozenset({"gemini", "openrouter", "ollama"})
+
+
 def _copy_responses(source: Path, destination: Path) -> int:
+    """Copy recorded responses, skipping anything a test wrote.
+
+    The runtime cache is shared by whatever ran against it, and the test suite used to write
+    into it: so the first export shipped two answers invented by a stub provider in
+    `test_adjudicate.py`. Because the replay cache is always consulted, those entries then
+    shadowed the very tests that created them: the stub was never called, its assertions
+    about call counts failed, and the verdict came back from disk.
+
+    A recording is only useful for replay if it captures what a real provider said, so
+    anything else is left behind.
+    """
     if not source.is_dir():
         logger.warning("no response cache at %s", source)
         return 0
@@ -222,11 +239,23 @@ def _copy_responses(source: Path, destination: Path) -> int:
     destination.mkdir(parents=True, exist_ok=True)
 
     copied = 0
+    skipped = 0
     for path in source.rglob("*.json"):
+        try:
+            provider = json.loads(path.read_text(encoding="utf-8")).get("provider", "")
+        except (OSError, json.JSONDecodeError):
+            skipped += 1
+            continue
+        if str(provider).strip().lower() not in _REAL_PROVIDERS:
+            skipped += 1
+            continue
         target = destination / path.relative_to(source)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, target)
         copied += 1
+
+    if skipped:
+        logger.info("skipped %d cached response(s) not recorded from a real provider", skipped)
     return copied
 
 
@@ -324,6 +353,7 @@ def main() -> int:
     parser.add_argument("--log-level", default="INFO")
     arguments = parser.parse_args()
     configure_logging(arguments.log_level)
+    use_utf8_console()
 
     if arguments.command == "export":
         return do_export(include_responses=not arguments.no_responses)

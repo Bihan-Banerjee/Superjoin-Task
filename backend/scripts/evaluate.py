@@ -2,7 +2,7 @@
 
 Three things, in increasing order of how much they are worth.
 
-`metrics` prints what the pipeline recorded — grounding pass rate, normalisation coverage,
+`metrics` prints what the pipeline recorded: grounding pass rate, normalisation coverage,
 the relation mix, model cost. Cheap, and computed from the run rather than claimed.
 
 `audit` independently re-verifies every stored fact against its source page. The pipeline
@@ -35,9 +35,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sqlalchemy import func, select  # noqa: E402
 
 from app.core.text import locate  # noqa: E402
-from app.db.engine import session_scope  # noqa: E402
+from app.db.engine import add_missing_columns, session_scope  # noqa: E402
 from app.db.models import Document, Fact, Page  # noqa: E402
-from app.main import configure_logging  # noqa: E402
+from app.main import configure_logging, use_utf8_console  # noqa: E402
+from app.pipeline.ground import value_supported  # noqa: E402
 
 logger = logging.getLogger("evaluate")
 
@@ -124,7 +125,7 @@ def metrics() -> int:
     _rule("Coverage by document")
     for entry in report["coverage"]:
         kept = entry["facts"] + entry["rejections"]
-        share = f"{entry['facts'] / kept:.0%} kept" if kept else "—"
+        share = f"{entry['facts'] / kept:.0%} kept" if kept else "-"
         print(
             f"  {entry['title'][:46]:<46} {entry['facts']:>5} facts  "
             f"{entry['facts_per_extracted_page']:>5.2f}/page  {share}"
@@ -164,12 +165,24 @@ def audit() -> int:
                 failures.append((fact.id, "quote no longer locatable", fact.statement))
                 continue
 
-            if fact.value_text and fact.value_number is not None:
-                window = page.text[
-                    max(0, (fact.evidence_start or 0) - 24) : (fact.evidence_end or 0) + 24
-                ]
-                if fact.value_text not in window and fact.value_text.replace(",", "") not in (
-                    window.replace(",", "")
+            # A fact whose quote was never located has no span to re-check against, and
+            # checking offset zero instead would compare the value with an unrelated part of
+            # the page. There is nothing positional to verify, so it is left alone.
+            if (
+                fact.value_text
+                and fact.value_number is not None
+                and fact.evidence_start is not None
+                and fact.evidence_end is not None
+            ):
+                # The same function ingest used, rather than a second implementation of the
+                # same idea. The audit previously compared raw strings, so any value split
+                # across a line break: "2.8 \nbillion" on the page against "2.8 billion" in
+                # the fact: was reported as broken grounding when the evidence was in fact
+                # exactly where it claimed to be. Two versions of one rule is how that
+                # happened; there is now one.
+                candidate = {"value_text": fact.value_text, "value_number": fact.value_number}
+                if not value_supported(
+                    candidate, page.text, fact.evidence_start, fact.evidence_end
                 ):
                     failures.append(
                         (fact.id, "value not present in the source span", fact.statement)
@@ -184,7 +197,7 @@ def audit() -> int:
     print(f"  failed: {len(failures)}")
 
     for fact_id, reason, statement in failures[:25]:
-        print(f"    fact {fact_id}: {reason} — {statement[:70]}")
+        print(f"    fact {fact_id}: {reason}: {statement[:70]}")
     if len(failures) > 25:
         print(f"    ... and {len(failures) - 25} more")
 
@@ -294,7 +307,7 @@ def sample(size: int, seed: int, out: Path | None) -> int:
             f"{len(chosen)} facts drawn at random from {total} (seed {seed}).",
             "",
             "Grounding pass rate measures whether the evidence checks out. It says nothing",
-            "about whether a fact was attached to the right measure, period or scope — only",
+            "about whether a fact was attached to the right measure, period or scope: only",
             "reading the page can answer that. Mark each row and total the column.",
             "",
             "Verdict: `correct`, `wrong-measure`, `wrong-period`, `wrong-scope`,",
@@ -314,9 +327,9 @@ def sample(size: int, seed: int, out: Path | None) -> int:
                 f"- **Subject / measure**: {fact.subject_surface} / {fact.predicate_surface}",
                 f"- **Value**: {fact.value_text}"
                 + (f"  → {fact.value_base:,.4g} {fact.unit_canonical}" if fact.value_base else ""),
-                f"- **Period**: {fact.period_label or '—'}"
+                f"- **Period**: {fact.period_label or '-'}"
                 + (f" ({fact.period_start} to {fact.period_end})" if fact.period_start else ""),
-                f"- **Qualifiers**: {fact.qualifiers or '—'}   **Basis**: {fact.basis or '—'}",
+                f"- **Qualifiers**: {fact.qualifiers or '-'}   **Basis**: {fact.basis or '-'}",
                 f"- **Confidence**: {fact.confidence:.2f}   **Evidence match**: {match}",
                 "",
                 f"> {fact.evidence_quote.strip()}",
@@ -353,6 +366,12 @@ def main() -> int:
     parser.add_argument("--log-level", default="WARNING")
     arguments = parser.parse_args()
     configure_logging(arguments.log_level)
+    use_utf8_console()
+
+    # A layer ingested before a column was added is still worth reporting on, and reading it
+    # should not cost the re-ingest that produced it. Additive only, so this cannot damage a
+    # corpus it does not fully understand.
+    add_missing_columns()
 
     if arguments.command == "metrics":
         return metrics()

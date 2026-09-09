@@ -15,10 +15,23 @@ measures or schemas. Page routing uses structural signals only, prompts describe
 things to look for, and the measure vocabulary is a database table that grows as documents
 introduce new measurements.
 
-> **Status: in progress.** The pipeline, API, interface and test suite are complete and
-> passing. The corpus run, the committed evaluation snapshot, and the measured results below
-> are pending a model API key. Sections marked _(pending run)_ will be filled from the real
-> run rather than estimated.
+Every number below is measured from the committed run over the six starter documents, not
+estimated. `backend/scripts/evaluate.py` and `backend/scripts/benchmark.py` reproduce all of
+them, and the snapshot in `backend/seed/` lets a reviewer see the same results with no API
+key at all.
+
+| | |
+| --- | --- |
+| Documents / pages | 6 / 511 |
+| Facts kept | 3,600 of 4,311 proposed (**83.5% grounded**) |
+| Attribution precision on a 40-fact sample | **87.5%** (35/40): see below |
+| Evidence re-verified against source pages | **3,600 of 3,600** |
+| Quotes located for highlighting | 95.8% |
+| Relations | 583, of which **427 cross-document** (73%) |
+| Decided by rule vs by model | 473 / 110 |
+| Measures discovered | 1,407, 100 seen in more than one document |
+| Local pipeline cost | **138 ms/page** across 511 pages |
+| Model calls | 587, 77% served from cache |
 
 ## Setup and Run Instructions
 
@@ -98,12 +111,14 @@ cd backend
 .venv/Scripts/python scripts/evaluate.py audit                  # re-verify every fact
 .venv/Scripts/python scripts/evaluate.py sample --size 40       # manual precision worksheet
 .venv/Scripts/python scripts/snapshot.py export                 # write the snapshot
-.venv/Scripts/python -m pytest                                  # 127 tests, ~50s
+.venv/Scripts/python -m pytest                                  # 226 tests, ~22s
 ```
 
 ## Video Demo
 
-_(pending run)_
+> **To add:** link here. The walkthrough covers upload with live progress, a fact opened to
+> its highlighted evidence on the page, the four cases, the registry growing across
+> documents, and the evaluation figures.
 
 ## Approach
 
@@ -121,7 +136,7 @@ comparison impossible.
 
 ### Evidence is verified, not trusted
 
-The model returns a verbatim quote. The pipeline then checks it independently — locates it in
+The model returns a verbatim quote. The pipeline then checks it independently: locates it in
 the page's raw text (tolerating ligatures, soft hyphens and line-break hyphenation), confirms
 the value appears **in the source page** within that span, and resolves the span to rectangles
 on the rendered page.
@@ -130,20 +145,19 @@ That check reads the page and never the model's own quote. Searching the quote t
 fabricated figure corroborate itself: write any number into the quote and it passes. That was a
 real defect here, caught by the end-to-end tests.
 
-Anything that fails is written to a rejection table with a typed reason — not logged. That
+Anything that fails is written to a rejection table with a typed reason: not logged. That
 table is the measurement of how much the extractor got wrong, and it is where the required
 failure case comes from.
 
 ### Rules decide first; the model handles the residue
 
 A deterministic engine classifies pairs by period, unit scale, currency, scope, segment and
-basis. It escalates only when it cannot decide — an unresolved period, an implausibly large
+basis. It escalates only when it cannot decide: an unresolved period, an implausibly large
 gap, low extraction confidence, or a non-numeric fact where agreement is a question about
 language rather than arithmetic.
 
 Rules are free, so far more pairs can be compared than a model budget allows; reproducible, so
-the same corpus always yields the same relationships; and explainable in a way that matters —
-*"these differ because one is stated in crore and the other in millions"* names a checkable
+the same corpus always yields the same relationships; and explainable in a way that matters: *"these differ because one is stated in crore and the other in millions"* names a checkable
 reason. Every relation records whether a rule or the model decided it, and which rule.
 
 Agreement tolerance is derived from the significant figures each value was written at, not a
@@ -158,7 +172,7 @@ model call for the uncertain band only.
 
 When uncertain, the registry **creates rather than merges**. Two rows for one measure loses
 some links. One row for two measures manufactures contradictions between numbers that were
-never the same number — confidently wrong output, which is much worse. Merges across unit
+never the same number: confidently wrong output, which is much worse. Merges across unit
 classes are blocked outright, so "revenue" can never absorb "revenue growth".
 
 ### Reading order is reconstructed
@@ -172,7 +186,7 @@ Page 9 of the Delhivery deck extracts as:
 ```
 
 Every number there is real and none is attributable. Columns are recovered from an occupancy
-histogram whose threshold is relative to the page's own density (a gutter is not empty — a
+histogram whose threshold is relative to the page's own density (a gutter is not empty: a
 centred heading crosses it), and full-width lines are detected by continuity so a running head
 is not cut into fragments. Chart slides are split into vertical panels and grouped by shared
 horizontal position, which is the relationship a bar chart is drawn with, giving:
@@ -193,7 +207,7 @@ horizontal position, which is the relationship a bar chart is drawn with, giving
 
 ### AI tools used
 
-Claude (Anthropic) was used throughout as a pair programmer — for design discussion,
+Claude (Anthropic) was used throughout as a pair programmer: for design discussion,
 implementation, and reviewing the reconciliation logic against real pages from the corpus.
 Every architectural decision above was made deliberately and is defended in
 [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
@@ -206,16 +220,87 @@ fact pairs the rules cannot settle. Embeddings run locally on CPU.
 
 The **Cases** page derives all four from whatever is currently in the layer, ranked by what
 makes a good example, with the selection reasons shown. Ingest a different corpus and it
-answers from that corpus — a fixed list would prove the documents contained the examples, not
+answers from that corpus: a fixed list would prove the documents contained the examples, not
 that the system found them.
 
-_(pending run — screenshots and specific examples to follow)_
+These are the examples it currently returns. Run `python scripts/evaluate.py cases` to
+reproduce them.
+
+**1. Corroboration across documents, expressed differently.** The annual report states
+revenue from services for FY24 as `81,415` on a page declaring amounts in Indian Rupees in
+million. The earnings deck states the same measure as `8,142` in crore. Both normalise to
+₹81.42 billion, so the pair corroborates on the `unit_scale` dimension: decided by rule,
+with no model call. This is the case the whole design exists for: the two figures share no
+digits, no unit and no wording, and are the same fact.
+
+**2. A genuine contradiction.** Two figures for revenue over the nine months ended
+31 December 2021, `48,105.30` and `46,230.56` million, on the same entity, period and
+basis, a 3.9% gap and no dimension that explains it. Flagged with a severity score rather
+than asserted flatly, because the extractor may still have missed a distinction the page
+made.
+
+**3. An apparent contradiction explained by context.** Figures that differ because they
+cover different periods (FY24 against the year ended 31 March 2021), reported as
+`reconciled_by_context` on the `period` dimension. The layer also produces `supersedes`
+where one basis replaces another (a restatement against the figure it restates), which
+says not only that the difference is explained but which figure is now current.
+
+**4. An extraction or reasoning failure.** Of 4,311 candidate facts, 711 were refused.
+The reasons are counted, not described: 308 whose measure could not be resolved, 215 whose
+quote could not be located on the page, 60 where the value was absent from the cited span,
+54 ambiguous short quotes, and the rest smaller. Every one is a row in `rejections` with the
+candidate that produced it, so the failure mode is inspectable rather than anecdotal.
+
+> **Screenshots to add:** `docs/screenshots/`: Documents, Facts with the evidence overlay,
+> Relations, Cases, Registry, Evaluation.
+
+## Precision
+
+Grounding rate says the evidence is real. It says nothing about whether a fact was attached
+to the *right* measure, period or scope, and only reading the page answers that. So 40 facts
+were drawn at random (`scripts/evaluate.py sample`, seed 7) and checked one by one against
+their source pages. The worksheet, with every verdict, is in
+[`docs/precision-sample.md`](docs/precision-sample.md).
+
+**35 of 40 correct: 87.5%.** The five failures are worth stating individually, because their
+shape is the point:
+
+| # | Verdict | What went wrong |
+| --- | --- | --- |
+| 10 | `wrong-measure` | `66` read as payable days; the column was receivable days |
+| 20 | `wrong-scope` | A directorship date attributed to the wrong director |
+| 21 | `wrong-scope` | Options exercised by one individual reported as the plan total |
+| 36 | `wrong-measure` | Electricity in joules given the document's default currency |
+| 40 | `wrong-measure` | "129 Service Centres" was "129 Freight Service Centres" |
+
+Every one is a **misattribution, not an invention**. In all five the number is real, on the
+page, and correctly transcribed; what is wrong is the label attached to it. That is the
+failure mode this design chooses: verification is against the source text, so a fabricated
+figure cannot survive, while a figure attached to a neighbouring row's heading can. Four of
+the five come from dense tabular pages where the label sits in a different column from the
+value: the same structural problem the layout stage exists to attack, and does not fully
+solve.
+
+Fact 36 was the useful one: it exposed a real defect rather than a judgement call, and led to
+the currency-inheritance fix described in `docs/TECHNICAL.md`.
+
+**How the sample was checked.** The verdicts were produced by a separate language model
+reading each fact against its quoted evidence, then spot-checked by hand. That is weaker than
+a full manual review and the number should be read with that in mind: an independent reader
+is a reasonable cross-check on attribution, but it is not the same as a person with the PDF
+open. The worksheet is committed so the judgements can be disputed rather than taken on
+trust.
 
 ## Limitations and Next Steps
 
-**Stacked bar charts are genuinely ambiguous.** Segment percentages within a bar map to legend
-entries by colour, and there is no colour in the text layer. Where the mapping is unclear the
-extractor reports the value as unattributed rather than guessing. That is the honest behaviour,
+**Stacked bar charts are genuinely ambiguous in the text layer.** Segment percentages within a
+bar map to legend entries by colour, and there is no colour in the text. With a vision model
+configured the page image is attached and the model may attach a value to a series where a
+segment's colour matches a legend swatch, recording what it matched so the attribution can be
+checked. That is the one claim in the system no later check can verify against the page, so
+the licence is narrow: where colours are close, where the legend outnumbers the segments, or
+where the rendering is too small, the extractor still reports the value as unattributed rather
+than guessing. That is the honest behaviour,
 and it does lose real facts.
 
 **Precision is not yet measured against a gold set.** Grounding pass rate says the evidence
@@ -241,7 +326,7 @@ adjudication; structured table extraction.
 
 ## Additional Notes
 
-**Performance.** Parsing the 511-page starter corpus went from 263s to 38s — table detection
+**Performance.** Parsing the 511-page starter corpus went from 263s to 38s: table detection
 costs ~450ms/page and is now gated behind cheap structural signals, unused font metadata
 extraction was removed, and pages are parsed across processes. Non-content pages never reach a
 model. Model responses are content-addressed on disk, so re-ingesting is nearly free and
@@ -254,7 +339,7 @@ rebuilt from scratch, so adding a document costs work proportional to that docum
 grounding, normalisation, registry and rule engine against a stub model, over PDFs generated
 inside the test so the text a quote must match sits beside the assertion about it. They found
 four correctness bugs and a SQLite writer deadlock before a single token was spent on a real
-document — including the self-validating quote described above, and a page-declared scale that
+document: including the self-validating quote described above, and a page-declared scale that
 was silently dropped whenever the extractor also reported a currency, which would have made
 every figure in the Delhivery annual report a million times too small.
 

@@ -105,7 +105,7 @@ async def run(files: list[Path], *, force: bool) -> int:
         elapsed = time.perf_counter() - started
         summary = stats.as_dict()
         logger.info(
-            "[%d/%d] %s in %.0fs — %d facts kept of %d proposed (%.0f%% grounded), "
+            "[%d/%d] %s in %.0fs: %d facts kept of %d proposed (%.0f%% grounded), "
             "%d relations, %d rejections",
             index,
             len(files),
