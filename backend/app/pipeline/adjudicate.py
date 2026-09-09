@@ -5,7 +5,7 @@ than a coin flip.
 
 The model is given evidence, not summaries. Both verbatim quotes plus the surrounding text
 from their pages, because the distinction that explains a difference is very often a phrase
-just outside what was extracted — a column header, a footnote, a bracketed "(revised)".
+just outside what was extracted: a column header, a footnote, a bracketed "(revised)".
 
 The model is told what the mechanical comparison already established, so it is answering
 the narrow question that remains rather than starting over and possibly disagreeing with
@@ -137,7 +137,7 @@ async def _adjudicate_pair(
 
     The policy when it does not is deliberately asymmetric. A contradiction is the strongest
     thing this system says about a pair of documents, and it says it to a reader who will go
-    and look — so it needs both readings to agree. Where one ordering contradicts and the
+    and look: so it needs both readings to agree. Where one ordering contradicts and the
     other reconciles, the reconciliation is kept and the disagreement is recorded on the
     relation. That is the conservative direction: the pair stays visible, flagged as
     unsettled, rather than being asserted as a conflict on the strength of a coin that
@@ -145,8 +145,8 @@ async def _adjudicate_pair(
 
     One case the comparison cannot see: `refines` is directional, and neither the model's
     schema nor the relation row records which fact is the specific one, so a flip between
-    "A refines B" and "B refines A" reads as agreement. Period containment — nearly every
-    real instance — is settled by rule long before it reaches here.
+    "A refines B" and "B refines A" reads as agreement. Period containment, nearly every
+    real instance: is settled by rule long before it reaches here.
     """
     forward = await _ask(client, item, context, swapped=False)
     if not cross_check:
@@ -233,7 +233,7 @@ def load_adjudication_context(
             location = f"page {page.page_number}" if page else ""
             if page_label:
                 location += f" (printed {page_label})"
-            source = f"{title} — {publisher}, {location}"
+            source = f"{title}: {publisher}, {location}"
             if document.as_of_date:
                 source += f", data as of {document.as_of_date}"
         context[fact_id] = {"context": truncate(surrounding, 1200), "source": source}

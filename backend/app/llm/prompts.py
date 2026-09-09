@@ -199,13 +199,13 @@ to be drawn, not the order of the legend.
 
 Where a segment's colour matches a legend swatch, you may attach the value to that series \
 and record the match in "attribution". Say what you matched, so a reader can check it \
-against the image. Do the same for a value you placed by position — which chart on the \
+against the image. Do the same for a value you placed by position: which chart on the \
 page it sits in, which axis category it stands over.
 
 This licence is narrow. Read the value itself from the text; the image is for deciding what \
 the value belongs to. Where two segments are close in colour, where the legend has more \
 entries than the bar has segments, or where the rendering is too small to be sure, the \
-answer is still "unattributed" — a value filed under the wrong series is worse than one \
+answer is still "unattributed": a value filed under the wrong series is worse than one \
 filed under none, because nothing downstream can tell that it is wrong.
 """
 }

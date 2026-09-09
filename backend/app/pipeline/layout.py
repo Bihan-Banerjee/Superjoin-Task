@@ -158,8 +158,8 @@ def vertical_corridors(
     minimum_gutter = max(page.width * 0.02, _median_height(body) * 1.2)
 
     # The floor is a fraction of how much text a typical column carries, not an absolute
-    # number. A gutter is rarely empty — a centred box heading or a full-width footnote
-    # crosses it — so what identifies it is being far emptier than the text either side.
+    # number. A gutter is rarely empty: a centred box heading or a full-width footnote
+    # crosses it: so what identifies it is being far emptier than the text either side.
     # Scaling to the page's own density also makes this independent of page size and font.
     occupied = [value for value in occupancy if value > 0]
     if not occupied:
@@ -231,12 +231,12 @@ def _assign_to_columns(words: list[Word], columns: list[tuple[float, float]]) ->
 
 
 # A cell that is a figure rather than a label. Deliberately permissive about what may
-# surround the digits — currency marks, percent signs, accounting parentheses, footnote
-# daggers — because the question here is only "is this column data or heading".
+# surround the digits: currency marks, percent signs, accounting parentheses, footnote
+# daggers: because the question here is only "is this column data or heading".
 _NUMERIC_CELL = re.compile(r"^[^\w]*[-+(]?\s*[\d.,]*\d[\d.,]*\s*\)?\s*[^\w]*$")
 
-# Header rows to consider before giving up. Financial tables stack two or three — a span of
-# years over a row of "Actual / Est. / Proj." — and beyond that the run of label-only rows
+# Header rows to consider before giving up. Financial tables stack two or three: a span of
+# years over a row of "Actual / Est. / Proj.": and beyond that the run of label-only rows
 # is far more likely to be a stub column than a header.
 _MAX_HEADER_ROWS = 3
 
@@ -257,7 +257,7 @@ def _render_tables(tables: list[Table]) -> list[str]:
 
     The grid alone is not enough on a wide table. A figure in the fourth of six columns is
     only meaningful once it is joined to a heading that may be three rows above it, and
-    that join is exactly what goes wrong — a value read off the "2024/25 Est." column and
+    that join is exactly what goes wrong: a value read off the "2024/25 Est." column and
     filed under "2023/24" is a well-formed fact that happens to be false, which is the
     worst kind for a system like this to produce. So each numeric cell of a wide table is
     also written out beside its own row label and column heading, where the pairing cannot
@@ -353,7 +353,7 @@ def _spans_columns(line: Line, columns: list[tuple[float, float]], gutter: float
     """Whether a line is genuinely one run of text across a column boundary.
 
     Running heads, box titles and footnote rules are laid out across the full measure. Cut
-    at the boundary they become two fragments — "ANNUAL" and "REPORT 2024-25" — which is
+    at the boundary they become two fragments, "ANNUAL" and "REPORT 2024-25", which is
     worse than useless, because a fragment still looks like text and gets read as such.
 
     Extent alone cannot decide this. Grouping words into lines across the whole page also

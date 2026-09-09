@@ -178,7 +178,7 @@ def _ocr_pages(
 
     A missing or broken Tesseract raises on the first page. That is a fact about the
     deployment rather than about the page, so the loop stops instead of failing identically
-    on every remaining page — the document still ingests, with its scanned pages reported as
+    on every remaining page: the document still ingests, with its scanned pages reported as
     unread.
     """
     recovered: dict[int, ParsedPage] = {}
@@ -246,8 +246,8 @@ def _parse_page(
     page: pymupdf.Page, page_number: int, textpage: pymupdf.TextPage | None = None
 ) -> ParsedPage:
     rect = page.rect
-    # `textpage` carries an OCR transcription when one was made. Everything downstream —
-    # words, boxes, quote location, highlighting — then works against that transcription
+    # `textpage` carries an OCR transcription when one was made. Everything downstream
+    # (words, boxes, quote location, highlighting) then works against that transcription
     # exactly as it would against a real text layer.
     read = {"textpage": textpage} if textpage is not None else {}
     text = page.get_text("text", **read)
@@ -273,7 +273,7 @@ def _parse_page(
     # Table detection costs around 450ms per page, roughly fifty times everything else on
     # this page put together. Run unconditionally it dominates ingest of a hundred-page
     # filing for no benefit, because most pages are prose. The gate below uses signals that
-    # are already paid for — ruled lines and the share of numeric tokens — and only pays for
+    # are already paid for (ruled lines and the share of numeric tokens) and only pays for
     # detection on pages that look like they hold a grid.
     tables = _extract_tables(page) if _likely_tabular(words, ruling_lines) else []
 

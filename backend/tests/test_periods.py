@@ -110,7 +110,7 @@ def test_a_day_is_never_read_as_a_year():
     """The regression that made different years look like the same period.
 
     "December 31, 2021" was matched by the month-and-year rule, which took the first number
-    after the month — the day — and expanded 31 into 2031. Every label of that shape landed
+    after the month (the day) and expanded 31 into 2031. Every label of that shape landed
     on the same invented month, so figures from different years compared as though they
     covered identical periods and were reported as contradicting each other.
     """

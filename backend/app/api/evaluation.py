@@ -178,7 +178,7 @@ def _adjudication(session: Session) -> dict[str, Any]:
     """How steady the model was on the pairs the rules could not settle.
 
     Each escalated pair is read twice with the two facts swapped. Pairs where the answer
-    changed are kept, marked, and counted here — the number is a direct measurement of how
+    changed are kept, marked, and counted here: the number is a direct measurement of how
     much of the model's judgement was about the evidence and how much was about the order it
     happened to be presented in.
     """

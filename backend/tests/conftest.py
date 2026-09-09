@@ -1,7 +1,7 @@
 """Shared fixtures.
 
-The integration tests run the real pipeline — real parsing, real grounding, real
-normalisation, real rules — against a stub model. That combination is deliberate: the parts
+The integration tests run the real pipeline: real parsing, real grounding, real
+normalisation, real rules: against a stub model. That combination is deliberate: the parts
 worth testing are the ones this project actually wrote, and a network call in a test would
 make the suite slow, expensive and dependent on a model's mood.
 """
@@ -44,8 +44,8 @@ def ignore_developer_env() -> Any:
 class StubProvider(Provider):
     """Serves canned responses keyed by a marker in the prompt.
 
-    Requests are recorded so a test can assert on what the pipeline asked for — how pages
-    were batched, whether an image was attached, which stage a call belonged to — which is
+    Requests are recorded so a test can assert on what the pipeline asked for: how pages
+    were batched, whether an image was attached, which stage a call belonged to: which is
     most of what there is to check about prompt assembly.
     """
 

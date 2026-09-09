@@ -7,8 +7,8 @@ surface form is what the evidence has to keep matching.
 
 Two decisions worth naming.
 
-Units are resolved with a precedence order — what is beside the number, then what the page
-declares, then what the document declares — because that is the order of specificity a
+Units are resolved with a precedence order: what is beside the number, then what the page
+declares, then what the document declares: because that is the order of specificity a
 reader applies. A figure printed as "8,142" on a page headed "(₹ in crore)" is in crore;
 the same figure with "million" written next to it is not, regardless of the page heading.
 
@@ -192,7 +192,7 @@ def normalize_candidate(
         else None
     )
     # A number nothing labelled is still a number. Leaving the base empty would make every
-    # bare count incomparable — and counts are exactly what is left once the document's
+    # bare count incomparable: and counts are exactly what is left once the document's
     # currency stops being pushed onto figures that are not amounts. It is still recorded as
     # unresolved, because "no unit was established" and "the unit is one" are different
     # claims and the evaluation page should not confuse them.
@@ -236,7 +236,7 @@ def _read_number(candidate: dict[str, Any], value_text: str | None, kind: str) -
     """The numeric value, if this fact has one.
 
     A categorical value is never scanned for digits. "Plot 5, Sector 44, Gurugram" contains
-    numbers, and reading them turns an address into a quantity of 5 somethings — a fact that
+    numbers, and reading them turns an address into a quantity of 5 somethings: a fact that
     then gets compared arithmetically against other quantities. The extractor already says
     which kind of fact this is; trusting that is cheaper and more correct than guessing.
     """
@@ -252,7 +252,15 @@ def _read_number(candidate: dict[str, Any], value_text: str | None, kind: str) -
     return parse_number(value_text) if value_text else None
 
 
-_NON_NUMERIC_KINDS = {"categorical", "relational", "definitional"}
+# Kinds whose value is not a quantity, and must therefore never be scanned for digits.
+#
+# `temporal` belongs here and was missing: "May 10, 2022" was being read as the number 10,
+# and "Since March 7, 2019" as 7 with a unit of "march". 157 of the corpus's 158 temporal
+# facts carried a spurious figure, which then entered numeric comparison: two unrelated
+# dates falling on the 14th look like agreement to a reconciler working on value_base. A
+# date's meaning is its interval, which the period parser already resolves; the digits inside
+# it are not a measurement of anything.
+_NON_NUMERIC_KINDS = {"categorical", "relational", "definitional", "temporal"}
 
 
 def _clean_unit(raw: Any) -> str | None:
@@ -299,7 +307,7 @@ def _resolve(
     # The currency applies only where nothing else established one, so it is never pushed
     # onto a percentage or a shipment count.
     #
-    # The scale applies to any monetary figure that did not carry its own — including one
+    # The scale applies to any monetary figure that did not carry its own: including one
     # whose currency the extractor did report, which is the common case for a figure printed
     # bare under a "(₹ in million)" heading. Gating scale on the currency being unknown too
     # leaves those figures a million times too small.
@@ -319,13 +327,18 @@ def _resolve(
     # codes covered" came out of the annual report as 1.879e13 INR billion, a figure no
     # document contains and one that then competes with real money in comparisons.
     #
-    # So both currency and scale now need some reason to believe the figure is an amount —
+    # So both currency and scale now need some reason to believe the figure is an amount:
     # a currency the extractor or the page already established, or a measure that names one.
     # A figure that fails the test keeps its bare number, which is the honest reading of a
     # count printed under a heading about rupees.
     monetary = bool(stated_currency) or _names_money(candidate)
     wants_currency = unresolved and monetary
-    wants_scale = inline_scale is None and monetary and (unresolved or unit.unit_class == CURRENCY)
+    wants_scale = (
+        inline_scale is None
+        and monetary
+        and not _per_unit(candidate)
+        and (unresolved or unit.unit_class == CURRENCY)
+    )
     if not wants_currency and not wants_scale:
         return unit
 
@@ -363,7 +376,7 @@ def _split_period_from_predicate(predicate: str) -> tuple[str, str | None]:
     instruction not to do this is in the prompt and is followed most of the time; this makes
     the outcome deterministic rather than dependent on that.
 
-    The period is not discarded — it is returned so it can fill an empty period field.
+    The period is not discarded: it is returned so it can fill an empty period field.
     """
     match = _PERIOD_PREFIX.match(predicate)
     if not match:
@@ -449,6 +462,17 @@ _MONEY_STEMS = (
 )
 
 
+# Amounts quoted for one of something. A declaration that a statement is "in million" is
+# about the aggregates in it, not about a per-share figure printed beside them: a face value
+# of ₹1 each is one rupee, and reading it as ₹1 million is off by six orders of magnitude.
+_PER_UNIT = re.compile(r"\bper\b|\bface value\b|\bnominal value\b", re.IGNORECASE)
+
+
+def _per_unit(candidate: dict[str, Any]) -> bool:
+    """Whether the measure is an amount for a single share, unit or item."""
+    return bool(_PER_UNIT.search(collapse_whitespace(str(candidate.get("predicate", "")))))
+
+
 def _names_money(candidate: dict[str, Any]) -> bool:
     """Whether the measure describes an amount of money rather than a count of things."""
     predicate = collapse_whitespace(str(candidate.get("predicate", ""))).lower()
@@ -462,7 +486,7 @@ def _counted_noun(candidate: dict[str, Any]) -> str | None:
 
     Read from the measure rather than the value, because that is where it is stated:
     "express parcel shipments" is a count of shipments however the figure beside it is
-    written. Only the trailing words are considered — the head of the phrase is the noun.
+    written. Only the trailing words are considered: the head of the phrase is the noun.
     """
     predicate = collapse_whitespace(str(candidate.get("predicate", ""))).lower()
     if not predicate:

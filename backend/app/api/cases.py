@@ -207,7 +207,7 @@ def _reconciled_case(context: _Context) -> dict[str, Any]:
     """An apparent contradiction that context explains.
 
     Ranked to favour a large numeric gap with a named explanation, because that is the case
-    where a system without this reasoning would have reported a false contradiction — which
+    where a system without this reasoning would have reported a false contradiction: which
     is exactly what the reconciliation logic exists to prevent.
     """
     scored: list[tuple[float, dict[str, Any], list[str]]] = []

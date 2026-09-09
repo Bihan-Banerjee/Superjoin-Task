@@ -1,6 +1,6 @@
 """Page classification.
 
-Two jobs. First, route each page to the right layout reconstruction — a two-column central
+Two jobs. First, route each page to the right layout reconstruction: a two-column central
 bank review and a chart slide need opposite treatment. Second, decide which pages are worth
 spending a model call on at all.
 
@@ -10,7 +10,7 @@ contain a fact worth linking. Skipping them is the single cheapest performance w
 pipeline and it costs nothing in recall, so the thresholds below are set to skip only when
 the evidence is unambiguous.
 
-All signals are structural — density, geometry, punctuation, digit share. Nothing keys off
+All signals are structural: density, geometry, punctuation, digit share. Nothing keys off
 a filename, a publisher or a phrase that only appears in this corpus.
 """
 

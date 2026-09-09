@@ -1,7 +1,7 @@
 """The deterministic reconciler.
 
 Given two facts that the candidate stage thinks are about the same thing, decide how they
-relate — or decline, and hand the pair to the model.
+relate: or decline, and hand the pair to the model.
 
 Rules run before the model for three reasons. They are free, so the system can compare far
 more pairs than a model budget would allow. They are reproducible, so the same corpus
@@ -10,7 +10,7 @@ always yields the same relationships. And they are explainable in a way that mat
 than a paragraph of prose asserting the same thing, because it names a checkable reason.
 
 The escalation policy is the interesting part. A pair is only sent to the model when the
-rules cannot decide *and* the answer would change something — chiefly when values disagree
+rules cannot decide *and* the answer would change something: chiefly when values disagree
 and no mechanical explanation accounts for it. A confident rule verdict is never
 second-guessed by a model call, because that would spend budget to make the system less
 predictable.
@@ -183,8 +183,8 @@ def reconcile(left: Fact, right: Fact) -> Verdict:
             subtype="different_period",
             rule_id="period-differs",
             explanation=(
-                f"These cover different periods — {_period_text(left)} against "
-                f"{_period_text(right)} — so the values are not expected to match."
+                f"These cover different periods, {_period_text(left)} against "
+                f"{_period_text(right)}, so the values are not expected to match."
             ),
             confidence=0.92,
             delta_absolute=absolute,
@@ -260,8 +260,8 @@ def reconcile(left: Fact, right: Fact) -> Verdict:
             dimension = DIM_VINTAGE if basis_difference[2] else DIM_BASIS
             subtype = "agrees_across_basis"
             explanation = (
-                f"{explanation} They are stated on different bases — {basis_difference[0]} "
-                f"and {basis_difference[1]} — and still agree."
+                f"{explanation} They are stated on different bases: {basis_difference[0]} "
+                f"and {basis_difference[1]}: and still agree."
             )
         return Verdict(
             relation_type=REL_CORROBORATES,
@@ -339,8 +339,8 @@ def _unit_mismatch(left: Fact, right: Fact) -> Verdict:
         subtype="different_unit_class",
         rule_id="unit-class-differs",
         explanation=(
-            f"These are measured in different kinds of unit — {left.unit_canonical or 'unknown'} "
-            f"against {right.unit_canonical or 'unknown'} — so they are not the same quantity."
+            f"These are measured in different kinds of unit: {left.unit_canonical or 'unknown'} "
+            f"against {right.unit_canonical or 'unknown'}: so they are not the same quantity."
         ),
         confidence=0.85,
     )
@@ -441,7 +441,7 @@ def _supersession(left: Fact, right: Fact) -> tuple[Fact, Fact] | None:
 
     The ordering comes from the bases alone. Publication dates are deliberately not used:
     a later document repeating an earlier figure unchanged is not a restatement, and a
-    document that disagrees without saying it is revising anything is a contradiction — the
+    document that disagrees without saying it is revising anything is a contradiction: the
     interesting kind, and not one to quietly relabel as an update.
     """
     left_rank = _SUPERSESSION_RANK.get((left.basis or "").strip().lower())

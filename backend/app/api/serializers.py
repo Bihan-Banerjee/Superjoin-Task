@@ -2,7 +2,7 @@
 
 The interface is a review tool, so responses carry what a reviewer needs to judge a fact
 without a second request: the evidence, where it sits on the page, and how it was
-normalised. Relations carry both facts in full for the same reason — a verdict is not
+normalised. Relations carry both facts in full for the same reason: a verdict is not
 reviewable without the two things it is a verdict about.
 """
 

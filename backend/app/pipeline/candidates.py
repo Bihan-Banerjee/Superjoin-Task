@@ -2,7 +2,7 @@
 
 Comparing every fact with every other fact is quadratic, and at a few thousand facts that
 is already millions of comparisons for a handful of real relationships. Worse, most of
-those pairs are not merely wasted work — they are opportunities to produce a wrong
+those pairs are not merely wasted work: they are opportunities to produce a wrong
 relationship between two things that were never related.
 
 So pairs are proposed by three independent routes and unioned:
@@ -81,7 +81,7 @@ def generate(session: Session, new_fact_ids: list[int]) -> list[Pair]:
 def _drop_same_page(session: Session, pairs: list[Pair]) -> list[Pair]:
     """Discard pairs whose facts sit on the same page of the same document.
 
-    Two figures printed side by side are usually one statement read twice — a table row
+    Two figures printed side by side are usually one statement read twice: a table row
     against its own total, or adjacent bars in a chart. Relating them says nothing and
     consumes the comparison budget that cross-document pairs need.
     """

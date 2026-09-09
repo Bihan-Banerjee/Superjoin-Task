@@ -4,7 +4,7 @@ Used for two things: finding facts that might be about the same thing, and decid
 whether a newly seen measure name is one the registry already holds.
 
 The model runs locally through ONNX. Candidate generation compares every new fact against
-the existing corpus, so this has to be free and offline — paying an API per comparison
+the existing corpus, so this has to be free and offline: paying an API per comparison
 would make the linking stage the most expensive part of the system by a wide margin, and
 would make the whole pipeline unusable without credentials.
 

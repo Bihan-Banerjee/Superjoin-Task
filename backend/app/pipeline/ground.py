@@ -13,7 +13,7 @@ So the model's quote is treated as a claim to be checked, not as a citation to b
 3. The quote must resolve to rectangles on the rendered page.
 
 A candidate that fails any of these is rejected with a typed reason and stored. Those
-rejections are not noise to be suppressed — they are the measurement of how much the
+rejections are not noise to be suppressed: they are the measurement of how much the
 extractor got wrong, and they are where the required extraction-failure case comes from.
 """
 
@@ -147,7 +147,7 @@ def ground_candidates(
             continue
 
         located = page_text[match.start : match.end]
-        if not _value_supported(candidate, page_text, match.start, match.end):
+        if not value_supported(candidate, page_text, match.start, match.end):
             outcome.rejected.append(
                 Rejection(
                     reason=VALUE_ABSENT_FROM_QUOTE,
@@ -209,7 +209,7 @@ def _locate_fragment(page_text: str, quote: str, value_text: str) -> SpanMatch:
 
     Fragments that contain the value are tried first. Picking the longest instead would
     often land on a neighbouring cell, and the fact would then be rejected for a value that
-    is genuinely on the page — the right fragment simply was not the one chosen.
+    is genuinely on the page: the right fragment simply was not the one chosen.
     """
     fragments = [part.strip() for part in _RENDITION_SEPARATORS.split(quote) if part.strip()]
     if len(fragments) < 2:
@@ -348,7 +348,7 @@ def _names_a_measure(predicate: str) -> bool:
     """Whether a predicate names something measurable rather than describing a sentence.
 
     Two checks. It must not be one of the fragments above, and once function words are
-    removed something has to remain — "of the total" is not a measure, "revenue from
+    removed something has to remain: "of the total" is not a measure, "revenue from
     services" is.
     """
     normalised = " ".join(predicate.lower().split())
@@ -377,7 +377,7 @@ _VAGUE_SUBJECTS = {
 }
 
 
-def _value_supported(candidate: dict[str, Any], page_text: str, start: int, end: int) -> bool:
+def value_supported(candidate: dict[str, Any], page_text: str, start: int, end: int) -> bool:
     """Check the value appears in the *source page*, inside the span the quote matched.
 
     Checked against the page and never against the model's own quote. A quote is a claim

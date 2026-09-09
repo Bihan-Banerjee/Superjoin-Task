@@ -124,8 +124,8 @@ class Document(Base):
 
     # How much of this document's substantive text had already been ingested when it
     # arrived, and which document held it. An identical file is refused at upload on its
-    # sha256; this catches the same content arriving as a different file — a re-export, a
-    # re-download, an excerpt of something already here — which no file hash can see.
+    # sha256; this catches the same content arriving as a different file: a re-export, a
+    # re-download, an excerpt of something already here: which no file hash can see.
     near_duplicate_of: Mapped[int | None] = mapped_column(
         ForeignKey("documents.id", ondelete="SET NULL")
     )

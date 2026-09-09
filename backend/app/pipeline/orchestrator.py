@@ -11,7 +11,7 @@ pairs the new document's facts against the existing corpus. Re-ingesting an unch
 document is close to free and produces an identical result.
 
 **Attributable.** Every stage writes what it discarded and why. A page whose extraction
-call failed, a quote that could not be verified, a value the extractor declined to attach —
+call failed, a quote that could not be verified, a value the extractor declined to attach:
 all of them end up in the rejection ledger rather than disappearing into a log line.
 """
 
@@ -211,7 +211,14 @@ async def _run(
 
     # --- parse ---------------------------------------------------------------------
     reporter.stage("parsing", f"reading {filename}")
-    parsed = await asyncio.to_thread(parse_pdf, path, workers=settings.resolved_parse_workers)
+    parsed = await asyncio.to_thread(
+        parse_pdf,
+        path,
+        workers=settings.resolved_parse_workers,
+        ocr=settings.enable_ocr,
+        ocr_language=settings.ocr_language,
+        ocr_dpi=settings.ocr_dpi,
+    )
     stats.pages_total = len(parsed.pages)
 
     signals: dict[int, PageSignals] = {}
@@ -295,11 +302,38 @@ def _store_pages(
                     unit_currency=page.unit_currency,
                     unit_scale=page.unit_scale,
                     extracted=signal.should_extract,
+                    ocr_applied=page.ocr_applied,
                     layout={"reason": signal.reason, "metrics": signal.metrics},
                 )
             )
         session.flush()
+        _record_text_layer(session, document_id, parsed)
         _record_content_overlap(session, document_id)
+
+
+def _record_text_layer(session: Session, document_id: int, parsed: ParsedDocument) -> None:
+    """Count the pages there was nothing to read on, and say so if that is most of them.
+
+    A document made of scans ingests without error and produces no facts. Without this it is
+    indistinguishable from a document that simply states nothing, which is the one failure
+    mode most likely to be mistaken for a bug.
+    """
+    scanned = sum(1 for page in parsed.pages if page.looks_scanned and not page.ocr_applied)
+    recovered = sum(1 for page in parsed.pages if page.ocr_applied)
+    document = session.get(Document, document_id)
+    if document is None:
+        return
+    document.scanned_pages = scanned
+    document.ocr_pages = recovered
+
+    if scanned and parsed.pages and scanned / len(parsed.pages) >= 0.5:
+        logger.warning(
+            "document %d has no usable text layer on %d of %d pages%s",
+            document_id,
+            scanned,
+            len(parsed.pages),
+            "" if recovered else "; set ENABLE_OCR=true to read them",
+        )
 
 
 # Pages shorter than this are dropped before the overlap is measured. A cover sheet, a
@@ -318,7 +352,7 @@ def _record_content_overlap(session: Session, document_id: int) -> None:
     excerpt of something already ingested. Page text hashes catch those, because the words
     on the page do not change when the file around them does.
 
-    Measured as containment — how much of the *new* document is already present — rather
+    Measured as containment (how much of the *new* document is already present) rather
     than as a symmetric overlap. The question being asked is "have I seen this before", and
     a ten-page excerpt of a hundred-page filing is entirely contained in it while sharing
     only a tenth of its pages.
@@ -666,7 +700,7 @@ def _is_informative(verdict: Verdict, left: Fact, right: Fact) -> bool:
     """Whether a relation says anything a reader could not already see.
 
     One case is filtered: two facts in the *same* document that differ only in period. A
-    table listing FY22, FY23 and FY24 produces those by construction — three pairs per
+    table listing FY22, FY23 and FY24 produces those by construction: three pairs per
     measure that report nothing except the shape of the table. On the earnings deck they
     were 195 of 271 relations and buried everything worth looking at.
 

@@ -132,8 +132,8 @@ class RegistryReport:
 class MeasureRegistry:
     """Resolves measure surfaces, embedding in batches and keeping the matrix incrementally.
 
-    The obvious implementation — embed each surface as it comes up, and stack the registry's
-    vectors to compare against — is quadratic and dominated by per-call overhead. On a single
+    The obvious implementation: embed each surface as it comes up, and stack the registry's
+    vectors to compare against: is quadratic and dominated by per-call overhead. On a single
     hundred-page filing it took longer than the extraction it was resolving. Embedding every
     surface in one pass and appending to a kept matrix makes the stage proportional to the
     number of *distinct* measures rather than to the number of facts.

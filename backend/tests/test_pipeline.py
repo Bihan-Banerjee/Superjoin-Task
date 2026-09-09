@@ -2,7 +2,7 @@
 
 Everything the project actually wrote runs for real here: parsing, layout, classification,
 grounding, normalisation, the registry, candidate generation and the rule engine. Only the
-model is stubbed, which is what makes it possible to assert on exact outcomes — a real model
+model is stubbed, which is what makes it possible to assert on exact outcomes: a real model
 would make the expected fact count a moving target and the suite would stop being a test.
 """
 
@@ -347,7 +347,7 @@ class TestCrossDocument:
         """A real sentence with the number swapped must not survive.
 
         The value is checked against the source page, never against the text the model
-        supplied — otherwise a quote corroborates itself and the guard is decorative.
+        supplied: otherwise a quote corroborates itself and the guard is decorative.
         """
         with session_scope() as session:
             values = {fact.value_text for fact in session.scalars(select(Fact))}
@@ -530,7 +530,7 @@ class TestNearDuplicateDetection:
     """The same content arriving as a different file.
 
     Upload refuses a byte-identical PDF on its sha256. That catches re-uploading the same
-    file and nothing else — a re-export, a re-download after a cosmetic change, or an
+    file and nothing else: a re-export, a re-download after a cosmetic change, or an
     excerpt of something already ingested all produce different bytes and identical words.
     """
 

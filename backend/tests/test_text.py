@@ -2,7 +2,7 @@ from app.core.text import collapse_whitespace, contains_normalized, locate, norm
 
 
 def test_normalize_folds_ligatures_and_smart_punctuation():
-    result = normalize("The “ofﬁce” — 12 months")
+    result = normalize("The “ofﬁce”: 12 months")
     assert '"office"' in result.text
     assert "12 months" in result.text
 

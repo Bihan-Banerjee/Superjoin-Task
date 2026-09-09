@@ -219,7 +219,7 @@ _BARE_SPAN_PATTERN = re.compile(r"\b(?P<y1>(?:19|20)\d{2})\s*[-/]\s*(?P<y2>\d{2}
 # "period" between the span and "ended" is filler. Filings write both "nine months ended
 # December 31, 2021" and "nine months period ended December 31, 2021" and mean the same nine
 # months by either. Without this the second form fell past this matcher to the month matcher,
-# which read the day as a year — see _MONTH_YEAR_PATTERN below.
+# which read the day as a year: see _MONTH_YEAR_PATTERN below.
 _SPAN_ENDED = r"(?:\s+period)?\s+ended\s+(?:on\s+)?"
 
 _YEAR_ENDED_PATTERN = re.compile(
@@ -257,7 +257,7 @@ _BARE_YEAR_PATTERN = re.compile(r"\b(?P<y>(?:19|20)\d{2})\b")
 #
 # The trailing guard is what stops a *day* being read as a year. In "December 31, 2021" the
 # first number after the month is 31, and without the guard this matched it and returned
-# December 2031 — a period no document mentions, which every other such label also collapsed
+# December 2031: a period no document mentions, which every other such label also collapsed
 # onto, so facts from different years compared as though they covered the same months and
 # were reported as contradicting each other. Refusing the match when a further number follows
 # leaves those labels to the date matchers, which read them correctly as a single day.
@@ -305,7 +305,7 @@ def parse_period(label: str | None, convention: str = INDIA) -> Period:
     return Period(label=text, kind=UNKNOWN, start=None, end=None, convention=convention)
 
 
-_RANGE_SEPARATOR = re.compile(r"\s+(?:to|through|until|till|[-–—])\s+", re.IGNORECASE)
+_RANGE_SEPARATOR = re.compile(r"\s+(?:to|through|until|till|[-–-])\s+", re.IGNORECASE)
 
 
 def _try_explicit_range(text: str, convention: str) -> Period | None:

@@ -86,7 +86,7 @@ Express Parcel shipments for FY24 were 812 Mn.""",
 # different reporting vocabulary, and a domain that is not corporate finance at all.
 #
 # Nothing about it should need new code. That is the claim the brief makes the project
-# defend — "it will be tested on unseen PDFs" — and this is where it is checked.
+# defend, "it will be tested on unseen PDFs", and this is where it is checked.
 UTILITY_PAGES = [
     """Cascadia Water Authority
 Statistical Bulletin for the fiscal year ended September 30, 2024
