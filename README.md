@@ -1,11 +1,11 @@
-﻿# Fact Knowledge Layer
+# Fact Knowledge Layer
 
 Reads PDFs, extracts facts that are grounded in verifiable evidence, and works out where
 those facts agree, disagree, or only appear to disagree because they were measured over
 different periods, scopes, units or data vintages.
 
 The problem is not extraction. It is that the same number is written many ways. Delhivery's
-FY24 annual report states revenue as **81,419.7** under a heading reading *"All amounts in
+FY24 annual report states revenue as **81,415** under a heading reading *"All amounts in
 Indian Rupees in million"*. Their Q4 FY24 earnings deck states the same figure as **8,142**,
 in crore. A system comparing text reports a ten-fold contradiction. This one reports
 corroboration, names the reason, and shows both sentences highlighted on their source pages.
@@ -75,6 +75,24 @@ local, no credentials) and `replay` (recorded responses, no network). Concurrenc
 rate default to values inside the Gemini free tier; raising them is allowed and warned about
 rather than blocked.
 
+Four settings are off by default and each is off for a reason:
+
+```ini
+ENABLE_OCR=false          # read scanned pages through Tesseract
+ENABLE_GRAPH_VIEW=false   # draw the relation table as a node graph as well
+READ_ONLY=false           # refuse uploads, reprocessing and deletion
+ENABLE_VISION=true        # attach the page image on chart slides
+```
+
+`ENABLE_OCR` needs the Tesseract binary on `PATH`; without it the setting is reported as
+unavailable rather than failing mid-ingest. `READ_ONLY` is the mode for publishing the
+committed snapshot to reviewers: no model key is needed and none should be present. All
+four are editable from the **Configure** page in the interface, which writes `backend/.env`
+line by line so comments and settings it does not know about survive. Secrets there are
+write-only: reading back returns whether a key is set and its last four characters, never
+the key. The endpoint refuses non-loopback callers unless `ALLOW_REMOTE_CONFIG` says
+otherwise, because it can repoint the pipeline and spend someone's credit.
+
 ### 3. Run
 
 ```bash
@@ -111,7 +129,7 @@ cd backend
 .venv/Scripts/python scripts/evaluate.py audit                  # re-verify every fact
 .venv/Scripts/python scripts/evaluate.py sample --size 40       # manual precision worksheet
 .venv/Scripts/python scripts/snapshot.py export                 # write the snapshot
-.venv/Scripts/python -m pytest                                  # 244 tests, ~22s
+.venv/Scripts/python -m pytest                                  # 244 tests, ~25s
 ```
 
 ## Video Demo
@@ -162,7 +180,7 @@ reason. Every relation records whether a rule or the model decided it, and which
 
 Agreement tolerance is derived from the significant figures each value was written at, not a
 flat percentage. A flat 1% band would call 6.5% and 6.6% GDP growth the same figure while
-still needing to accept 8,142 Cr against 81,419.7 million.
+still needing to accept 8,142 Cr against 81,415 million.
 
 ### The schema is data
 
@@ -195,6 +213,22 @@ horizontal position, which is the relationship a bar chart is drawn with, giving
 [x 238-328] 8,142 (y=139) | 10% | 7% | 19% | 62% | FY24 (y=452)
 ```
 
+### Scanned pages are detected before they are read
+
+A page whose text layer is empty or near-empty while the page is mostly image is a scan,
+and extracting from it silently produces nothing. Every page is classified for this, and a
+document that is entirely scans says so rather than returning an empty result. With
+`ENABLE_OCR=true` those pages are rendered at 300 dpi and read through Tesseract, and the
+OCR text carries word boxes, so a fact from an OCR'd page is grounded and highlighted by
+the same machinery as any other. The page records that OCR produced its text, so a fact's
+provenance says whether its evidence was read from a text layer or recovered from an image.
+That matters because OCR introduces a transcription error nothing downstream can detect: the
+quote check compares the fact against the OCR output, not against the ink.
+
+It is off by default. It is slow, it needs a binary the rest of the project does not, and
+the starter corpus is entirely text-native, so leaving it on would cost every reviewer time
+for a path none of them exercise.
+
 ### Trade-offs
 
 | Decision | Rejected alternative | Why |
@@ -204,6 +238,7 @@ horizontal position, which is the relationship a bar chart is drawn with, giving
 | Never convert currencies | Apply a rate | A rate has its own date and source. Converting would put a number in the layer that appears in no document. |
 | Server-rendered page images | pdf.js | Highlight rectangles land in the same coordinate space by construction, and a 100 MB filing is never shipped to the browser to show one page. |
 | SQLite | Postgres | One portable file that can be committed as an evaluation snapshot. |
+| Relation table first, graph view optional | Graph as the primary view | The brief says a graph is not the solution, and on this corpus it is worse than the table at the question a reviewer actually has: *why* did these two figures get this verdict. Both read the same endpoint, so the picture cannot disagree with the rows. Off by default, and its layout code is a separate bundle the browser never fetches while it is. |
 
 ### AI tools used
 
@@ -229,7 +264,7 @@ reproduce them.
 **1. Corroboration across documents, expressed differently.** The annual report states
 revenue from services for FY24 as `81,415` on a page declaring amounts in Indian Rupees in
 million. The earnings deck states the same measure as `8,142` in crore. Both normalise to
-â‚¹81.42 billion, so the pair corroborates on the `unit_scale` dimension: decided by rule,
+₹81.42 billion, so the pair corroborates on the `unit_scale` dimension: decided by rule,
 with no model call. This is the case the whole design exists for: the two figures share no
 digits, no unit and no wording, and are the same fact.
 
@@ -303,15 +338,23 @@ where the rendering is too small, the extractor still reports the value as unatt
 than guessing. That is the honest behaviour,
 and it does lose real facts.
 
-**Precision is not yet measured against a gold set.** Grounding pass rate says the evidence
-checks out; it does not say the fact was attached to the right measure or period. A fact can be
-perfectly grounded and still mis-attributed. `scripts/evaluate.py sample` produces the worksheet
-for checking this systematically.
+**The precision figure rests on a model-assisted review.** 87.5% on 40 facts is a real
+measurement, but the verdicts came from a second model reading each fact against its quoted
+evidence and were then spot-checked by hand, not produced by a person with the PDF open
+throughout. A hand-checked gold set is the honest next step, and the worksheet is committed
+so the judgements can be disputed.
 
-**Adjudication is not adversarial.** One model call decides each escalated pair. Asking twice
-with the facts in both orders and flagging disagreement would control for position bias.
+**Adjudication cross-checking is a detector, not a resolver.** Each escalated pair is read
+twice with the two facts swapped. Agreement keeps the verdict and averages the confidence;
+a pair that disagrees on re-reading is marked unsettled in the interface rather than being
+silently resolved. Where one reading says contradiction and the other does not, the
+non-contradiction is kept, which is a deliberate asymmetry: asserting a contradiction the
+model only reached from one direction is the more expensive mistake.
 
-**No OCR.** Scanned PDFs are detected but not handled.
+**OCR is transcription, and transcription errors are invisible downstream.** A scanned page
+read through Tesseract produces text that every later check treats as the page. A misread
+digit is grounded, highlighted and compared exactly like a correct one. Facts from OCR are
+marked, but marking is not verifying.
 
 **Entity resolution is shallow.** Aliases, embeddings and legal-suffix stripping. It does not
 know that a subsidiary belongs to a parent, which matters for consolidated versus standalone
@@ -321,8 +364,8 @@ comparisons.
 read. Nested headers and multi-row spans are handled as best it can, and financial statements
 are where the density is.
 
-Next, in order: measure attribution precision on a hand-checked sample; adversarial
-adjudication; structured table extraction.
+Next, in order: a hand-checked gold set for attribution precision; structured table
+extraction; parent and subsidiary awareness in entity resolution.
 
 ## Additional Notes
 
@@ -335,7 +378,7 @@ deterministic.
 **Incremental ingest.** A new document is paired only against the existing corpus, never
 rebuilt from scratch, so adding a document costs work proportional to that document.
 
-**Testing.** 127 tests in about 50 seconds. The end-to-end tests run the real parsing,
+**Testing.** 244 tests in about 25 seconds. The end-to-end tests run the real parsing,
 grounding, normalisation, registry and rule engine against a stub model, over PDFs generated
 inside the test so the text a quote must match sits beside the assertion about it. They found
 four correctness bugs and a SQLite writer deadlock before a single token was spent on a real
