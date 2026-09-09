@@ -75,7 +75,7 @@ def _filtered(
     """The relation query both the table and the graph are built on.
 
     Shared rather than duplicated so the two views cannot answer the same filters
-    differently — a graph that quietly disagrees with the table beside it would be worse
+    differently: a graph that quietly disagrees with the table beside it would be worse
     than no graph at all.
     """
     statement = select(Relation)
@@ -123,7 +123,7 @@ def relation_graph(
     404 when off rather than quietly serving data the deployment said it did not want.
 
     Edges are taken in severity order so the cap keeps the disagreements rather than an
-    arbitrary slice, and only facts an edge actually touches become nodes — an isolated fact
+    arbitrary slice, and only facts an edge actually touches become nodes: an isolated fact
     has nothing to show here and thousands of them would bury what does.
     """
     settings = get_settings()
