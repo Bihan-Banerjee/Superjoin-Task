@@ -1,690 +1,833 @@
-/*
-  The landing page, as a marked-up document.
+﻿/*
+  The landing page.
 
-  The product reads a page and marks what matters on it, so the layout borrows that
-  vocabulary rather than the usual hero-and-cards arrangement: a numbered margin rail down
-  the left, one wide text column, highlighter marks on the figures that carry the argument,
-  and marginal notes set against a rule.
+  A separate visual system from the workbench, and deliberately so. The workbench is a
+  reading surface: light by default, dense, quiet, optimised for hours of comparing numbers.
+  The landing page is a single argument made once, so it is built as a dark precision
+  instrument: near-black ground, hairline structure instead of shadows, type in a narrow
+  400 to 590 weight band at tight tracking, and exactly one chromatic element on the page.
 
-  Colour is used the way a highlighter uses it. Marks are drawn as a sweep behind the
-  baseline rather than a solid fill, so the text keeps the page's own foreground colour and
-  contrast never depends on the tint. Every surface here pairs an explicit background with an
-  explicit foreground; nothing inherits a colour it was not given.
+  Every token here is scoped under .lp. Nothing in this file can reach the workbench.
 */
 
-.doc {
-  min-height: 100vh;
-  background: var(--surface);
-  color: var(--text);
+.lp {
+  color-scheme: dark;
+
+  --void: #08090a;
+  --carbon: #0f1011;
+  --obsidian: #161718;
+  --graphite: #23252a;
+  --smoke: #383b3f;
+  /* The reference palette has one more grey between smoke and fog, used for secondary
+     metadata. It sits at 3.4:1 on this ground, which fails AA for text at any size that
+     appears here, so it is not defined: the smallest readable tone on the page is fog. */
+  --fog: #8a8f98;
+  --mist: #d0d6e0;
+  --bone: #e5e5e6;
+  --paper: #ffffff;
+
+  --acid: #e4f222;
+  --pulse: #27a644;
+  --coral: #eb5757;
+  --teal: #02b8cc;
+  --iris: #6366f1;
+  --lavender: #8b5cf6;
+
+  --lp-sans:
+    "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --lp-mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  --hairline: 1px solid var(--graphite);
+  --page: 1200px;
+  --gap-section: 96px;
+
+  position: relative;
+  min-height: 100%;
+  /* The gradient floor under the hero bleeds past the page width on purpose, and that bleed
+     was pushing the document 150px wider than the viewport. clip contains it without
+     creating a scroll container, which hidden would, and which would break the sticky
+     navigation above. */
+  overflow-x: clip;
+  background: var(--void);
+  color: var(--mist);
+  font-family: var(--lp-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+  font-feature-settings: "cv01" on, "ss03" on, "zero" on;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* --- Top bar ------------------------------------------------------------------------ */
+/* The page ground has to reach past the element, or an overscroll bounce shows the
+   workbench background behind a page that is meant to be black to the edges. */
+html[data-page="landing"],
+html[data-page="landing"] body {
+  background: #08090a;
+  color-scheme: dark;
+}
 
-.topbar {
+.lp ::selection {
+  background: var(--acid);
+  color: var(--void);
+}
+
+:where(.lp) a {
+  /* Zero specificity, so the link classes below can still set their own colour. As a
+     plain .lp a rule this out-specified every one of them and the whole page inherited
+     its links from whatever paragraph they sat in. */
+  color: inherit;
+  text-decoration: none;
+}
+
+.lp h1,
+.lp h2,
+.lp h3 {
+  margin: 0;
+  font-weight: 510;
+  color: var(--paper);
+}
+
+.lp p {
+  margin: 0;
+}
+
+.lp__shell {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---------------------------------------------------------------- navigation */
+
+.lp-nav {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  backdrop-filter: blur(10px) saturate(1.2);
-  border-bottom: 1px solid var(--border);
+  background: rgba(8, 9, 10, 0.9);
+  border-bottom: var(--hairline);
 }
 
-.topbar__inner {
+@supports (backdrop-filter: blur(1px)) {
+  .lp-nav {
+    background: rgba(8, 9, 10, 0.72);
+    backdrop-filter: saturate(140%) blur(12px);
+  }
+}
+
+.lp-nav__inner {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 12px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
-  max-width: 1240px;
-  margin: 0 auto;
-  padding: 10px var(--space-6);
+  gap: 24px;
 }
 
-/* The reading-progress rule doubles as the bar's bottom edge, so the chrome is doing
-   something rather than merely being there. */
-.topbar__rule {
-  display: block;
-  height: 2px;
-  transform-origin: 0 50%;
-  transform: scaleX(0);
-  background: linear-gradient(
-    90deg,
-    var(--series-1),
-    var(--series-3),
-    var(--series-4),
-    var(--series-2)
-  );
-  transition: transform 0.08s linear;
-}
-
-.topbar__mark {
+.lp-nav__mark {
   display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  text-decoration: none;
-  color: var(--text);
-}
-
-.topbar__glyph {
-  font-family: var(--font-mono);
-  font-size: var(--text-lg);
-  color: var(--accent-bright);
-}
-
-.topbar__name {
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.topbar__nav {
-  display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 510;
+  letter-spacing: -0.011em;
+  color: var(--paper);
 }
 
-.topbar__nav a:not(.stamp) {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: var(--text-sm);
-  padding-bottom: 2px;
-  border-bottom: 1px solid transparent;
-}
-
-.topbar__nav a:not(.stamp) i {
-  font-style: normal;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-faint);
-}
-
-.topbar__nav a:not(.stamp):hover {
-  color: var(--text);
-  border-bottom-color: var(--accent-bright);
-}
-
-/* A pressed-ink button rather than a rounded pill. */
-.stamp {
-  display: inline-block;
-  padding: 7px 14px;
-  border: 1px solid var(--accent-strong);
-  border-radius: 2px;
-  background: var(--accent-strong);
-  color: var(--stamp-ink);
-  font-size: var(--text-sm);
-  font-weight: 550;
-  letter-spacing: 0.01em;
-  text-decoration: none;
-  box-shadow: 3px 3px 0 var(--accent-glow);
-  transition:
-    transform 0.12s ease,
-    box-shadow 0.12s ease;
-}
-
-.stamp:hover {
-  transform: translate(1px, 1px);
-  box-shadow: 2px 2px 0 var(--accent-glow);
-}
-
-.stamp--lg {
-  padding: 10px 20px;
-  font-size: var(--text-md);
-}
-
-.ghost {
-  display: inline-block;
-  padding: 10px 4px;
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: var(--text-md);
-  border-bottom: 1px solid var(--border-strong);
-}
-
-.ghost:hover {
-  color: var(--text);
-  border-bottom-color: var(--accent-bright);
-}
-
-/* --- Sheet and folios ---------------------------------------------------------------- */
-
-.sheet {
-  max-width: 1240px;
-  margin: 0 auto;
-}
-
-.folio {
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
-  gap: var(--space-5);
-  padding: clamp(40px, 6vw, 88px) var(--space-6);
-  border-bottom: 1px solid var(--border);
-}
-
-.folio--tint {
-  background: var(--surface-sunken);
-}
-
-.folio__rail {
-  border-right: 1px solid var(--border);
-}
-
-.folio__num {
-  position: sticky;
-  top: 88px;
-  display: block;
-  font-family: var(--font-mono);
-  font-size: var(--text-xl);
-  color: var(--text-faint);
-  letter-spacing: -0.02em;
-}
-
-.folio__body {
-  min-width: 0;
-  max-width: 74ch;
-}
-
-.kicker {
-  margin: 0 0 var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--accent-bright);
-}
-
-.display {
-  margin: 0 0 var(--space-4);
-  font-size: clamp(30px, 5vw, 58px);
-  line-height: 1.05;
-  letter-spacing: -0.03em;
-  font-weight: 600;
-}
-
-.heading {
-  margin: 0 0 var(--space-5);
-  font-size: clamp(21px, 2.6vw, 30px);
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.lede {
-  margin: 0 0 var(--space-5);
-  font-size: clamp(15px, 1.35vw, 18px);
-  line-height: 1.7;
-  color: var(--text-muted);
-}
-
-.lede b {
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-
-.aside-note {
-  margin: var(--space-5) 0 0;
-  padding-left: var(--space-4);
-  border-left: 2px solid var(--highlight);
-  font-size: var(--text-md);
-  line-height: 1.6;
-  color: var(--text-muted);
-}
-
-/* --- Highlighter marks ---------------------------------------------------------------- */
-
-/* `mark` defaults to black on yellow in most browsers, which would ignore the theme, so
-   both colours are stated. The sweep sits behind the lower half of the line only. */
-.mk {
-  color: var(--text);
-  background: linear-gradient(transparent 58%, var(--mk-tint) 58%, var(--mk-tint) 94%);
-  padding: 0 2px;
-  border-radius: 1px;
-}
-
-.mk-1 {
-  --mk-tint: color-mix(in srgb, var(--series-2) var(--mk-strength), transparent);
-}
-.mk-2 {
-  --mk-tint: color-mix(in srgb, var(--corroborate) var(--mk-strength), transparent);
-}
-.mk-3 {
-  --mk-tint: color-mix(in srgb, var(--series-1) var(--mk-strength), transparent);
-}
-
-/* --- Clippings ------------------------------------------------------------------------ */
-
-.clips {
-  margin: var(--space-5) 0 0;
-}
-
-.clips__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.clip {
-  margin: 0;
-  padding: var(--space-4);
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-top: 3px solid var(--border-strong);
-  border-radius: 2px;
-}
-
-.clip figcaption {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-.clip__line {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-md);
-  color: var(--text);
-}
-
-.clip__line .mk {
-  font-family: var(--font-mono);
-  font-size: clamp(17px, 2vw, 22px);
-  font-weight: 600;
-}
-
-.clip__note {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.tie {
-  position: relative;
+.lp-nav__glyph {
   display: grid;
   place-items: center;
-  width: 64px;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--void);
+  font-size: 12px;
+  font-weight: 590;
 }
 
-.tie__thread {
-  position: absolute;
-  left: 0;
-  right: 0;
+.lp-nav__links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* :not(.lp-pill), because .lp-nav__links a is one class plus a type and would otherwise
+   out-specify .lp-pill, leaving the sign-in pill with mist text on its white fill. */
+.lp-nav__links a:not(.lp-pill) {
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--mist);
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.lp-nav__links a:not(.lp-pill):hover {
+  color: var(--paper);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lp-nav__links a i {
+  font-style: normal;
+  margin-right: 6px;
+  font-family: var(--lp-mono);
+  font-size: 11px;
+  color: var(--fog);
+}
+
+.lp-nav__links a:hover i {
+  color: var(--mist);
+}
+
+.lp-pill {
+  margin-left: 8px;
+  padding: 7px 14px;
+  border-radius: 9999px;
+  background: var(--paper);
+  color: var(--void);
+  font-size: 13px;
+  font-weight: 510;
+  letter-spacing: -0.011em;
+  white-space: nowrap;
+  transition: background 120ms ease;
+}
+
+.lp-pill:hover {
+  background: var(--bone);
+}
+
+/* Scroll position, drawn as a hairline rather than a bar. */
+.lp-nav__progress {
+  display: block;
   height: 1px;
-  background: repeating-linear-gradient(90deg, var(--border-strong) 0 4px, transparent 4px 8px);
+  background: var(--mist);
+  transform-origin: 0 50%;
+  transition: transform 90ms linear;
 }
 
-.tie__seal {
+/* ---------------------------------------------------------------- shared type */
+
+.lp-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--lp-mono);
+  font-size: 12px;
+  letter-spacing: -0.013em;
+  color: var(--fog);
+  text-transform: uppercase;
+}
+
+.lp-eyebrow::before {
+  content: "";
+  width: 16px;
+  height: 1px;
+  background: var(--smoke);
+}
+
+.lp-display {
+  font-size: clamp(40px, 7vw, 72px);
+  line-height: 1;
+  letter-spacing: -0.022em;
+  font-weight: 510;
+}
+
+.lp-display span {
+  color: var(--fog);
+}
+
+.lp-h2 {
+  font-size: clamp(30px, 4.4vw, 48px);
+  line-height: 1.04;
+  letter-spacing: -0.022em;
+}
+
+.lp-lede {
+  max-width: 58ch;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--fog);
+}
+
+.lp-lede b {
+  font-weight: 510;
+  color: var(--mist);
+}
+
+/* ---------------------------------------------------------------- hero */
+
+.lp-hero {
+  padding: 96px 0 0;
+}
+
+.lp-hero__copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+  max-width: 940px;
+}
+
+.lp-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+/* The one chromatic element on the page. Nothing else is allowed to be filled colour,
+   which is the whole reason this reads as an action rather than as decoration. */
+.lp-cta {
+  padding: 10px 16px;
+  border-radius: 6px;
+  background: var(--acid);
+  color: var(--void);
+  font-size: 14px;
+  font-weight: 510;
+  letter-spacing: -0.011em;
+  box-shadow:
+    rgba(0, 0, 0, 0.01) 0 5px 2px 0,
+    rgba(0, 0, 0, 0.04) 0 3px 2px 0,
+    rgba(0, 0, 0, 0.07) 0 1px 1px 0;
+  transition: filter 120ms ease;
+}
+
+.lp-cta:hover {
+  filter: brightness(1.08);
+}
+
+.lp-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--mist);
+}
+
+.lp-link:hover {
+  color: var(--paper);
+}
+
+.lp-link svg {
+  transition: transform 160ms ease;
+}
+
+.lp-link:hover svg {
+  transform: translateX(3px);
+}
+
+/* Atmospheric floor under the product frame: the only gradient in the system. */
+.lp-hero__stage {
   position: relative;
+  margin-top: 56px;
+  padding-bottom: 96px;
+}
+
+.lp-hero__stage::before {
+  content: "";
+  position: absolute;
+  inset: 22% -12% -6%;
+  background: radial-gradient(
+    62% 62% at 50% 100%,
+    rgba(208, 214, 224, 0.13) 0%,
+    rgba(208, 214, 224, 0.04) 42%,
+    rgba(8, 9, 10, 0) 72%
+  );
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- product frame */
+
+.lp-frame {
+  position: relative;
+  border-radius: 12px;
+  background: var(--carbon);
+  box-shadow: rgb(35, 37, 42) 0 0 0 1px inset;
+  padding: 24px;
+}
+
+.lp-frame__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--graphite);
+}
+
+.lp-frame__id {
+  font-family: var(--lp-mono);
+  font-size: 12px;
+  letter-spacing: -0.013em;
+  color: var(--fog);
+}
+
+.lp-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lp-badge {
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fog);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.lp-badge--good {
+  background: rgba(39, 166, 68, 0.14);
+  color: #6fd98a;
+}
+
+.lp-badge--bad {
+  background: rgba(235, 87, 87, 0.14);
+  color: #f39a9a;
+}
+
+.lp-badge--tag {
+  background: rgba(99, 102, 241, 0.16);
+  color: #a5a7ff;
+}
+
+.lp-badge--teal {
+  background: rgba(2, 184, 204, 0.14);
+  color: #6fd8e4;
+}
+
+/* The two facts, side by side, as the product actually shows them. */
+.lp-pair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 0;
+  padding: 24px 0;
+}
+
+.lp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lp-side--right {
+  padding-left: 24px;
+}
+
+.lp-side--left {
+  padding-right: 24px;
+}
+
+.lp-side__source {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fog);
+}
+
+.lp-side__source b {
+  font-weight: 400;
+  color: var(--mist);
+}
+
+.lp-side__measure {
+  font-size: 13px;
+  color: var(--mist);
+}
+
+.lp-side__value {
+  font-family: var(--lp-mono);
+  font-size: 32px;
+  line-height: 1.1;
+  letter-spacing: -0.022em;
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+}
+
+.lp-side__unit {
+  font-size: 12px;
+  color: var(--fog);
+}
+
+.lp-side__quote {
+  margin-top: 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--smoke);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fog);
+}
+
+/* The join between the two sides: a hairline with an equals sign sitting on it. */
+.lp-join {
+  position: relative;
+  width: 1px;
+  background: var(--graphite);
+}
+
+.lp-join span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   display: grid;
   place-items: center;
   width: 26px;
   height: 26px;
-  border-radius: 50%;
-  border: 1px solid var(--corroborate-border);
-  background: var(--corroborate-soft);
-  color: var(--corroborate);
-  font-family: var(--font-mono);
-  font-size: var(--text-md);
+  border-radius: 9999px;
+  background: var(--obsidian);
+  box-shadow: rgb(56, 59, 63) 0 0 0 1px inset;
+  font-size: 13px;
+  color: var(--mist);
 }
 
-.clips__verdict {
-  margin: var(--space-3) 0 0;
-  font-size: var(--text-md);
-  color: var(--text-muted);
-}
-
-.clips__verdict b {
-  color: var(--text);
-  font-family: var(--font-mono);
-}
-
-/* --- Steps ---------------------------------------------------------------------------- */
-
-.steps {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.step {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: var(--space-4);
-  padding: var(--space-4) 0;
-  border-top: 1px solid var(--border);
-}
-
-.step:last-child {
-  border-bottom: 1px solid var(--border);
-}
-
-.step__bead {
-  width: 10px;
-  height: 10px;
-  margin-top: 7px;
-  border-radius: 50%;
-}
-
-.step__bead--1 {
-  background: var(--series-1);
-}
-.step__bead--2 {
-  background: var(--series-3);
-}
-.step__bead--3 {
-  background: var(--series-4);
-}
-.step__bead--4 {
-  background: var(--series-2);
-}
-
-.step__text h3 {
-  margin: 0 0 6px;
-  font-size: var(--text-lg);
-  letter-spacing: -0.01em;
-}
-
-.step__text p {
-  margin: 0;
-  color: var(--text-muted);
-  line-height: 1.65;
-  max-width: 68ch;
-}
-
-/* --- Proofs ---------------------------------------------------------------------------- */
-
-/* Panes of one sheet rather than free-floating cards: hairline dividers, no gaps, no
-   shadows, one coloured edge each. */
-.proofs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-  background: var(--surface);
-  color: var(--text);
-}
-
-.proof {
-  position: relative;
-  padding: var(--space-4) var(--space-4) calc(var(--space-5) + 8px);
-  border-right: 1px solid var(--border);
-  border-top: 3px solid var(--border-strong);
-}
-
-.proof:last-child {
-  border-right: none;
-}
-
-.proof--good {
-  border-top-color: var(--corroborate);
-}
-.proof--bad {
-  border-top-color: var(--contradict);
-}
-.proof--warn {
-  border-top-color: var(--reconcile);
-}
-.proof--plain {
-  border-top-color: var(--series-2);
-}
-
-.proof__index {
-  display: block;
-  margin-bottom: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-faint);
-}
-
-.proof__title {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-md);
-  letter-spacing: -0.01em;
-}
-
-.proof__body {
-  margin: 0;
-  font-size: var(--text-sm);
+.lp-frame__verdict {
+  padding-top: 16px;
+  border-top: 1px solid var(--graphite);
+  font-size: 13px;
   line-height: 1.6;
-  color: var(--text-muted);
+  color: var(--fog);
 }
 
-.proof__verdict {
-  position: absolute;
-  left: var(--space-4);
-  bottom: var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: 0.04em;
-  color: var(--text-faint);
+.lp-frame__verdict b {
+  font-weight: 510;
+  color: var(--paper);
 }
 
-.proof--good .proof__verdict {
-  color: var(--corroborate);
-}
-.proof--bad .proof__verdict {
-  color: var(--contradict);
-}
-.proof--warn .proof__verdict {
-  color: var(--reconcile);
+.lp-frame__verdict code {
+  font-family: var(--lp-mono);
+  font-size: 12px;
+  color: var(--mist);
 }
 
-/* --- Running figures ------------------------------------------------------------------- */
+/* ---------------------------------------------------------------- corpus strip */
 
-.running {
-  margin: var(--space-5) 0 0;
-  font-size: clamp(15px, 1.3vw, 17px);
-  line-height: 1.9;
-  color: var(--text-muted);
-  max-width: 70ch;
+.lp-strip {
+  padding: 32px 0;
+  border-top: 1px solid var(--graphite);
+  border-bottom: 1px solid var(--graphite);
 }
 
-.num {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  color: var(--text);
-  padding: 1px 5px;
-  border-radius: 2px;
-  background: var(--surface-inset);
+.lp-strip__label {
+  font-family: var(--lp-mono);
+  font-size: 12px;
+  color: var(--fog);
+  margin-bottom: 16px;
 }
 
-.num--accent {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-.num--good {
-  color: var(--corroborate);
-  background: var(--corroborate-soft);
-}
-.num--bad {
-  color: var(--contradict);
-  background: var(--contradict-soft);
-}
-
-.ctas {
+.lp-strip__row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-  margin-top: var(--space-5);
+  gap: 12px 48px;
+  font-size: 13px;
+  color: var(--fog);
 }
 
-/* --- Colophon --------------------------------------------------------------------------- */
-
-.colophon {
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-5);
-  max-width: 1240px;
-  margin: 0 auto;
-  padding: var(--space-5) var(--space-6);
-}
-
-.colophon__mark {
-  font-family: var(--font-mono);
-  font-size: var(--text-xl);
-  color: var(--text-faint);
-}
-
-.colophon p {
-  margin: 0;
-  max-width: 74ch;
-  font-size: var(--text-sm);
-  line-height: 1.65;
-  color: var(--text-muted);
-}
-
-/* --- Theme toggle ------------------------------------------------------------------------ */
-
-.theme-toggle {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  background: var(--surface-inset);
-}
-
-.theme-toggle__pick {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 22px;
-  border: none;
-  border-radius: 1px;
-  background: transparent;
-  color: var(--text-faint);
-  font-size: var(--text-sm);
-  line-height: 1;
-  cursor: pointer;
-}
-
-.theme-toggle__pick:hover {
-  color: var(--text);
-}
-
-.theme-toggle__pick.is-on {
-  background: var(--surface);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--border);
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
+.lp-strip__row span {
   white-space: nowrap;
 }
 
-/* --- Reveal ------------------------------------------------------------------------------ */
+/* ---------------------------------------------------------------- sections */
 
-.reveal {
-  opacity: 0;
-  transform: translateY(10px);
-  transition:
-    opacity 0.45s ease,
-    transform 0.45s ease;
-  transition-delay: calc(var(--i, 0) * 55ms);
+.lp-section {
+  padding: var(--gap-section) 0;
+  border-bottom: 1px solid var(--graphite);
 }
 
-.reveal.is-visible {
+.lp-section:last-of-type {
+  border-bottom: 0;
+}
+
+.lp-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 64px;
+  align-items: start;
+}
+
+.lp-split__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* A raw page fragment, shown as the parser sees it. */
+.lp-raw {
+  border-radius: 12px;
+  background: var(--carbon);
+  box-shadow: rgb(35, 37, 42) 0 0 0 1px inset;
+  padding: 24px;
+  font-family: var(--lp-mono);
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--mist);
+  overflow-x: auto;
+}
+
+.lp-raw__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--graphite);
+  font-size: 12px;
+  color: var(--fog);
+}
+
+.lp-raw__tokens {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.lp-raw__tokens u {
+  text-decoration: none;
+  color: var(--paper);
+}
+
+.lp-raw__note {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--graphite);
+  font-family: var(--lp-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fog);
+}
+
+/* ---------------------------------------------------------------- method list */
+
+.lp-steps {
+  list-style: none;
+  margin: 40px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--graphite);
+}
+
+.lp-step {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 24px;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--graphite);
+}
+
+.lp-step__num {
+  font-family: var(--lp-mono);
+  font-size: 12px;
+  color: var(--fog);
+  padding-top: 4px;
+}
+
+.lp-step h3 {
+  font-size: 20px;
+  line-height: 1.33;
+  letter-spacing: -0.012em;
+  font-weight: 510;
+}
+
+.lp-step p {
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: -0.011em;
+  color: var(--fog);
+}
+
+/* ---------------------------------------------------------------- proof grid */
+
+.lp-proofs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 40px;
+  border-top: 1px solid var(--graphite);
+  border-left: 1px solid var(--graphite);
+}
+
+.lp-proof {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 28px 28px 24px;
+  border-right: 1px solid var(--graphite);
+  border-bottom: 1px solid var(--graphite);
+}
+
+.lp-proof h3 {
+  font-size: 20px;
+  line-height: 1.33;
+  letter-spacing: -0.012em;
+  font-weight: 510;
+}
+
+.lp-proof p {
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: -0.011em;
+  color: var(--fog);
+}
+
+.lp-proof__foot {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+/* ---------------------------------------------------------------- running figures */
+
+.lp-running {
+  max-width: 64ch;
+  margin-top: 48px;
+  font-size: 20px;
+  line-height: 1.55;
+  letter-spacing: -0.012em;
+  color: var(--fog);
+}
+
+.lp-running .lp-num {
+  font-family: var(--lp-mono);
+  font-size: 0.9em;
+  letter-spacing: -0.013em;
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+}
+
+.lp-running .lp-num--good {
+  color: #6fd98a;
+}
+
+.lp-running .lp-num--bad {
+  color: #f39a9a;
+}
+
+.lp-running .lp-num--tag {
+  color: #a5a7ff;
+}
+
+/* ---------------------------------------------------------------- closing */
+
+.lp-close {
+  padding: var(--gap-section) 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.lp-ghost {
+  padding: 8px 14px;
+  border: 1px solid var(--graphite);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--mist);
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.lp-ghost:hover {
+  border-color: var(--smoke);
+  color: var(--paper);
+}
+
+.lp-foot {
+  padding: 32px 0 64px;
+  border-top: 1px solid var(--graphite);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--fog);
+}
+
+.lp-foot p {
+  max-width: 68ch;
+}
+
+/* ---------------------------------------------------------------- motion */
+
+.lp-reveal {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lp-reveal.is-visible {
   opacity: 1;
   transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
+  .lp-reveal {
     opacity: 1;
     transform: none;
     transition: none;
   }
-
-  .stamp:hover {
-    transform: none;
+  .lp-nav__progress,
+  .lp-link svg {
+    transition: none;
   }
 }
 
-/* --- Responsive -------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------- responsive */
 
 @media (max-width: 900px) {
-  .folio {
-    grid-template-columns: 44px minmax(0, 1fr);
+  .lp {
+    --gap-section: 64px;
   }
-
-  .colophon {
-    grid-template-columns: 44px minmax(0, 1fr);
-    row-gap: var(--space-3);
+  .lp-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
   }
-
-  .colophon .theme-toggle {
+  .lp-step {
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 8px 16px;
+  }
+  .lp-step p {
     grid-column: 2;
-    justify-self: start;
   }
-
-  .folio__num {
-    font-size: var(--text-lg);
-  }
-
-  .clips__row {
+  .lp-proofs {
     grid-template-columns: minmax(0, 1fr);
   }
-
-  .tie {
-    width: 100%;
-    height: 34px;
-  }
-
-  .tie__thread {
-    left: 50%;
-    top: 0;
-    bottom: 0;
-    right: auto;
-    width: 1px;
-    height: auto;
-    background: repeating-linear-gradient(
-      180deg,
-      var(--border-strong) 0 4px,
-      transparent 4px 8px
-    );
-  }
-
-  .proof {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .proof:last-child {
-    border-bottom: none;
+  .lp-hero {
+    padding-top: 64px;
   }
 }
 
-@media (max-width: 640px) {
-  .topbar__inner,
-  .folio,
-  .colophon {
-    padding-left: var(--space-4);
-    padding-right: var(--space-4);
+@media (max-width: 720px) {
+  /* The pair reads as two stacked facts with the join turned on its side. */
+  .lp-pair {
+    grid-template-columns: minmax(0, 1fr);
   }
-
-  /* The section anchors are a convenience; the workbench link is not. */
-  .topbar__nav a:not(.stamp) {
+  .lp-side--left,
+  .lp-side--right {
+    padding: 0;
+  }
+  .lp-side--right {
+    padding-top: 24px;
+  }
+  .lp-join {
+    width: auto;
+    height: 1px;
+    margin: 24px 0 0;
+  }
+  .lp-frame,
+  .lp-raw {
+    padding: 16px;
+  }
+  .lp-side__value {
+    font-size: 28px;
+  }
+  .lp-nav__links a:not(.lp-pill) {
     display: none;
   }
-
-  .topbar__nav {
-    gap: var(--space-2);
+  .lp-running {
+    font-size: 17px;
   }
 }

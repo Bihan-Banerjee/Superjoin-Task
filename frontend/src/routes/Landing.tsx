@@ -2,23 +2,24 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
-import ThemeToggle from "../components/ThemeToggle";
 import { api } from "../lib/api";
 import { formatNumber } from "../lib/format";
 
 /**
- * The front door, laid out as a marked-up document.
+ * The front door.
  *
- * The product reads documents and marks evidence on them, so the page takes the shape of a
- * marked-up page: a numbered margin rail, one wide text column, highlighted spans where a
- * figure matters, and marginal notes instead of boxes. That is deliberately not the shape of
- * a typical product site, and it makes the layout say something about the tool rather than
- * decorate it.
+ * Built as a dark instrument rather than a marketing page: near-black ground, hairline
+ * borders instead of shadows, a narrow 400 to 590 weight band at tight tracking, and one
+ * chromatic element on the whole page. The restraint is the point. A tool whose entire claim
+ * is that it refuses to guess should not open with something that looks generated.
  *
- * Numbers are read from the API and written into the prose rather than stacked into tiles.
- * If the API is unreachable the sentence drops to its unmeasured form; a front page that
- * invents plausible figures when the backend is down would undermine the only claim the
- * project actually rests on.
+ * It does not follow the light and dark toggle. The workbench does, because someone reads
+ * dense tables there for a long time and that is a real preference; this page is one argument
+ * made once, and the argument is made in the dark. The toggle lives in the workbench header.
+ *
+ * Every figure in the closing paragraph is read from the running layer. If the API is not
+ * answering, the sentence drops to its unmeasured form rather than printing a plausible
+ * number, which would undermine the only claim the project actually rests on.
  */
 export default function Landing() {
   const { data: evaluation } = useQuery({
@@ -26,8 +27,15 @@ export default function Landing() {
     queryFn: api.getEvaluation,
     retry: false,
   });
+  const { data: documents } = useQuery({
+    queryKey: ["documents"],
+    queryFn: api.listDocuments,
+    retry: false,
+  });
+
   const progress = useScrollProgress();
-  useReveal(evaluation);
+  useDarkPage();
+  useReveal([evaluation, documents]);
 
   const counts = evaluation
     ? {
@@ -41,198 +49,305 @@ export default function Landing() {
     : null;
 
   return (
-    <div className="doc">
-      <header className="topbar">
-        <div className="topbar__inner">
-          <Link to="/" className="topbar__mark">
-            <span className="topbar__glyph" aria-hidden="true">
+    <div className="lp">
+      <header className="lp-nav">
+        <div className="lp-nav__inner">
+          <Link to="/" className="lp-nav__mark">
+            <span className="lp-nav__glyph" aria-hidden="true">
               ¶
             </span>
-            <span className="topbar__name">Fact Knowledge Layer</span>
+            Fact Knowledge Layer
           </Link>
-          <nav className="topbar__nav">
+          <nav className="lp-nav__links">
             <a href="#problem">
-              <i>01</i> Problem
+              <i>01</i>Problem
             </a>
             <a href="#method">
-              <i>02</i> Method
+              <i>02</i>Method
             </a>
             <a href="#proof">
-              <i>03</i> Proof
+              <i>03</i>Proof
             </a>
-            <ThemeToggle compact />
-            <Link className="stamp" to="/documents">
+            <Link className="lp-pill" to="/documents">
               Open workbench
             </Link>
           </nav>
         </div>
-        <span className="topbar__rule" style={{ transform: `scaleX(${progress})` }} />
+        <span className="lp-nav__progress" style={{ transform: `scaleX(${progress})` }} />
       </header>
 
-      <main className="sheet">
-        <section className="folio" id="problem">
-          <aside className="folio__rail" aria-hidden="true">
-            <span className="folio__num">01</span>
-          </aside>
+      <main>
+        <section className="lp-hero">
+          <div className="lp__shell">
+            <div className="lp-hero__copy">
+              <p className="lp-eyebrow lp-reveal">Fact reconciliation across documents</p>
+              <h1 className="lp-display lp-reveal">
+                Two documents. One fact.
+                <br />
+                <span>Nothing on either page says so.</span>
+              </h1>
+              <p className="lp-lede lp-reveal">
+                An annual report prints <b>81,415</b> under a note reading &ldquo;amounts in
+                Indian Rupees in million&rdquo;. An earnings deck prints <b>8,142</b> against
+                an axis marked ₹ Cr. Different digits, different unit, different wording, one
+                revenue. A reader sees it in a minute. A system has to be told how.
+              </p>
+              <div className="lp-hero__actions lp-reveal">
+                <Link className="lp-cta" to="/cases">
+                  Read the four cases
+                </Link>
+                <Link className="lp-link" to="/relations">
+                  Browse every relation <Arrow />
+                </Link>
+              </div>
+            </div>
+          </div>
 
-          <div className="folio__body">
-            <p className="kicker">The problem</p>
-            <h1 className="display reveal">
-              Two documents. One fact.
-              <br />
-              <mark className="mk mk-1">Nothing</mark> in common on the page.
-            </h1>
-
-            <p className="lede reveal">
-              An annual report prints <b>81,415</b> under a note reading &ldquo;amounts in
-              Indian Rupees in million&rdquo;. An earnings deck prints <b>8,142</b> in crore.
-              Different digits, different unit, different wording, and the same revenue. A
-              reader spots it in a minute. A system has to be told how.
-            </p>
-
-            <Clippings />
-
-            <p className="aside-note reveal">
-              Easy to describe, hard to get right: the only thing the two figures share is a
-              meaning that neither of them writes down.
-            </p>
+          <div className="lp-hero__stage">
+            <div className="lp__shell">
+              <ReconciliationFrame />
+            </div>
           </div>
         </section>
 
-        <section className="folio folio--tint" id="method">
-          <aside className="folio__rail" aria-hidden="true">
-            <span className="folio__num">02</span>
-          </aside>
+        <div className="lp__shell">
+          <CorpusStrip documents={documents?.documents} />
+        </div>
 
-          <div className="folio__body">
-            <p className="kicker">The method</p>
-            <h2 className="heading reveal">Four decisions, in the order they matter</h2>
+        <div className="lp__shell">
+          <section className="lp-section" id="problem">
+            <div className="lp-split">
+              <div className="lp-split__copy">
+                <p className="lp-eyebrow lp-reveal">01 The problem</p>
+                <h2 className="lp-h2 lp-reveal">
+                  A page does not say
+                  <br />
+                  what it means.
+                </h2>
+                <p className="lp-lede lp-reveal">
+                  Extraction is the easy half. The scale sits in a note twelve pages earlier,
+                  the period is called FY24 in one document and 2024/25 in another, and a
+                  chart contributes its numbers and its labels to the text layer as unordered
+                  tokens with no stated relationship between them.
+                </p>
+                <p className="lp-lede lp-reveal">
+                  Comparing text to text produces nonsense at this point. Everything has to be
+                  resolved into a form that can be compared before anything is compared.
+                </p>
+              </div>
 
-            <ol className="steps">
+              <div className="lp-raw lp-reveal">
+                <div className="lp-raw__head">
+                  <span>earnings deck, page 9</span>
+                  <span>text layer, verbatim</span>
+                </div>
+                <p className="lp-raw__tokens">
+                  Revenue from services <u>7,054</u> <u>7,224</u> <u>8,142</u> FY22 FY23 FY24 ₹
+                  Cr
+                </p>
+                <p className="lp-raw__note">
+                  Three values, three periods, and nothing binding one to another. The reading
+                  order is the order the glyphs were drawn in, which is not the order they are
+                  meant to be read in. Recovering the pairing needs the geometry of the page,
+                  not its text.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="lp-section" id="method">
+            <p className="lp-eyebrow lp-reveal">02 The method</p>
+            <h2 className="lp-h2 lp-reveal">Four decisions, in the order they matter</h2>
+
+            <ol className="lp-steps">
               {STEPS.map((step, index) => (
-                <li className="step reveal" key={step.title} style={{ "--i": index } as never}>
-                  <span className={`step__bead step__bead--${index + 1}`} aria-hidden="true" />
-                  <div className="step__text">
-                    <h3>{step.title}</h3>
-                    <p>{step.body}</p>
-                  </div>
+                <li className="lp-step lp-reveal" key={step.title}>
+                  <span className="lp-step__num">{String(index + 1).padStart(2, "0")}</span>
+                  <h3>{step.title}</h3>
+                  <p>{step.body}</p>
                 </li>
               ))}
             </ol>
-          </div>
-        </section>
+          </section>
 
-        <section className="folio" id="proof">
-          <aside className="folio__rail" aria-hidden="true">
-            <span className="folio__num">03</span>
-          </aside>
+          <section className="lp-section" id="proof">
+            <p className="lp-eyebrow lp-reveal">03 The proof</p>
+            <h2 className="lp-h2 lp-reveal">What the brief asks it to show</h2>
 
-          <div className="folio__body">
-            <p className="kicker">The proof</p>
-            <h2 className="heading reveal">What the brief asks it to show</h2>
-
-            <div className="proofs">
-              {PROOFS.map((proof, index) => (
-                <article className={`proof proof--${proof.tone} reveal`} key={proof.title}>
-                  <span className="proof__index">{String(index + 1).padStart(2, "0")}</span>
-                  <h3 className="proof__title">{proof.title}</h3>
-                  <p className="proof__body">{proof.body}</p>
-                  <span className="proof__verdict">{proof.verdict}</span>
+            <div className="lp-proofs">
+              {PROOFS.map((proof) => (
+                <article className="lp-proof lp-reveal" key={proof.title}>
+                  <h3>{proof.title}</h3>
+                  <p>{proof.body}</p>
+                  <div className="lp-proof__foot">
+                    <span className={`lp-badge lp-badge--${proof.tone}`}>{proof.verdict}</span>
+                  </div>
                 </article>
               ))}
             </div>
 
-            <p className="running reveal">
+            <p className="lp-running lp-reveal">
               {counts ? (
                 <>
-                  Right now the layer holds <Num>{counts.facts}</Num> grounded facts read from{" "}
+                  The layer currently holds <Num>{counts.facts}</Num> grounded facts read from{" "}
                   <Num>{counts.documents}</Num> documents, and <Num>{counts.relations}</Num>{" "}
-                  relations between them, of which <Num tone="accent">{counts.cross}</Num> span
+                  relations between them, of which <Num tone="tag">{counts.cross}</Num> join
                   two different sources. <Num tone="good">{counts.rate}</Num> of proposed facts
                   survived verification against the page they came from. The other{" "}
-                  <Num tone="bad">{counts.rejected}</Num> were refused, and each one is a row
-                  saying why.
+                  <Num tone="bad">{counts.rejected}</Num> were refused, and each one kept the
+                  reason it was refused.
                 </>
               ) : (
                 <>
-                  Every figure on this page is read from the running layer. The API is not
-                  answering at the moment, so there is nothing to report here rather than an
-                  estimate standing in for one.
+                  Every figure in this paragraph is read from the running layer. The API is not
+                  answering at the moment, so there is nothing here rather than an estimate
+                  standing in for something measured.
                 </>
               )}
             </p>
+          </section>
 
-            <div className="ctas reveal">
-              <Link className="stamp stamp--lg" to="/cases">
-                Read the four cases
+          <section className="lp-close">
+            <h2 className="lp-h2 lp-reveal">Point it at a filing it has never seen.</h2>
+            <p className="lp-lede lp-reveal">
+              No rule, prompt, or schema in this project names a document. Predicates and
+              qualifier keys are discovered from whatever arrives and resolved against a
+              registry, so an unfamiliar filing needs no migration and no new code.
+            </p>
+            <div className="lp-hero__actions lp-reveal">
+              <Link className="lp-ghost" to="/documents">
+                Upload a PDF
               </Link>
-              <Link className="ghost" to="/evaluation">
-                See what it got wrong
+              <Link className="lp-link" to="/evaluation">
+                See what it got wrong <Arrow />
               </Link>
             </div>
-          </div>
-        </section>
-      </main>
+          </section>
 
-      <footer className="colophon">
-        <span className="colophon__mark" aria-hidden="true">
-          ¶
-        </span>
-        <p>
-          Facts are extracted, grounded in the page they came from, normalised, and compared.
-          Nothing is hard-coded to these documents: point it at a filing it has never seen and
-          it answers from that one.
-        </p>
-        <ThemeToggle />
-      </footer>
+          <footer className="lp-foot">
+            <p>
+              Facts are extracted, verified against the page they came from, normalised, and
+              only then compared. Rules answer first and record why; the model is asked only
+              about what the rules cannot settle.
+            </p>
+            <Link className="lp-link" to="/documents">
+              Open workbench <Arrow />
+            </Link>
+          </footer>
+        </div>
+      </main>
     </div>
   );
 }
 
-/** The reconciliation, drawn as two clippings tied together. */
-function Clippings() {
+/**
+ * The reconciliation, drawn the way the workbench draws it.
+ *
+ * Linear's own site frames real product UI rather than an illustration, and the same applies
+ * here: this is the layout of a relation card, with the flagship pair in it. The rule named
+ * underneath is the rule that actually decides this comparison.
+ */
+function ReconciliationFrame() {
   return (
-    <div className="clips reveal">
-      <div className="clips__row">
-        <figure className="clip">
-          <figcaption>
-            Annual report <span>p.6</span>
-          </figcaption>
-          <p className="clip__line">
-            Revenue from services <mark className="mk mk-2">81,415</mark>
-          </p>
-          <p className="clip__note">note: amounts in Indian Rupees in million</p>
-        </figure>
-
-        <div className="tie" aria-hidden="true">
-          <span className="tie__thread" />
-          <span className="tie__seal">=</span>
+    <div className="lp-frame lp-reveal">
+      <div className="lp-frame__bar">
+        <span className="lp-frame__id">rule: values-agree</span>
+        <div className="lp-badges">
+          <span className="lp-badge lp-badge--good">corroborates</span>
+          <span className="lp-badge lp-badge--tag">unit_scale</span>
+          <span className="lp-badge">across documents</span>
+          <span className="lp-badge">no model call</span>
         </div>
-
-        <figure className="clip">
-          <figcaption>
-            Earnings deck <span>p.9</span>
-          </figcaption>
-          <p className="clip__line">
-            Revenue from services <mark className="mk mk-3">8,142</mark>
-          </p>
-          <p className="clip__note">axis: ₹ Cr</p>
-        </figure>
       </div>
 
-      <p className="clips__verdict">
-        <b>₹81.42 billion</b> either way. Decided by rule, on the unit scale, with no model
-        call.
+      <div className="lp-pair">
+        <div className="lp-side lp-side--left">
+          <p className="lp-side__source">
+            <b>Annual report FY24</b> <span>page 6</span>
+          </p>
+          <p className="lp-side__measure">Revenue from services</p>
+          <p className="lp-side__value">81,415</p>
+          <p className="lp-side__unit">INR, stated in million</p>
+          <p className="lp-side__quote">
+            &ldquo;All amounts in Indian Rupees in million unless otherwise stated&rdquo;
+          </p>
+        </div>
+
+        <div className="lp-join" aria-hidden="true">
+          <span>=</span>
+        </div>
+
+        <div className="lp-side lp-side--right">
+          <p className="lp-side__source">
+            <b>Q4 FY24 earnings deck</b> <span>page 9</span>
+          </p>
+          <p className="lp-side__measure">Revenue from services</p>
+          <p className="lp-side__value">8,142</p>
+          <p className="lp-side__unit">INR, axis marked ₹ Cr</p>
+          <p className="lp-side__quote">
+            &ldquo;Revenue from services 7,054 7,224 8,142 FY22 FY23 FY24&rdquo;
+          </p>
+        </div>
+      </div>
+
+      <p className="lp-frame__verdict">
+        Both resolve to <b>₹81.42 billion</b> for the year ended 31 March 2024. The difference
+        is entirely the scale each document declares, so the comparison is settled
+        mechanically by <code>values-agree</code> on the normalised value. Nothing was asked of
+        a model.
       </p>
     </div>
   );
 }
 
-function Num({ children, tone }: { children: ReactNode; tone?: "accent" | "good" | "bad" }) {
-  return <span className={tone ? `num num--${tone}` : "num"}>{children}</span>;
+/** What is actually loaded, named. Empty until the API answers, never filled with examples. */
+function CorpusStrip({ documents }: { documents?: { id: number; title: string }[] }) {
+  if (!documents?.length) return null;
+  return (
+    <div className="lp-strip lp-reveal">
+      <p className="lp-strip__label">Currently in the layer</p>
+      <div className="lp-strip__row">
+        {documents.map((document) => (
+          <span key={document.id}>{document.title}</span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-/** Fraction of the page scrolled, for the rule under the top bar. */
+function Num({ children, tone }: { children: ReactNode; tone?: "good" | "bad" | "tag" }) {
+  return <span className={tone ? `lp-num lp-num--${tone}` : "lp-num"}>{children}</span>;
+}
+
+function Arrow() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 6h7m0 0L6.75 3.25M9.5 6 6.75 8.75"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Marks the document while this page is mounted.
+ *
+ * The page is black to the edges, and an overscroll bounce would otherwise reveal the
+ * workbench background behind it. The attribute is removed on unmount so navigating into the
+ * workbench returns it to the theme the toggle chose.
+ */
+function useDarkPage() {
+  useEffect(() => {
+    document.documentElement.setAttribute("data-page", "landing");
+    return () => document.documentElement.removeAttribute("data-page");
+  }, []);
+}
+
+/** Fraction of the page scrolled, for the hairline under the navigation. */
 function useScrollProgress(): number {
   const [progress, setProgress] = useState(0);
   useEffect(() => {
@@ -252,14 +367,15 @@ function useScrollProgress(): number {
 }
 
 /**
- * Adds `is-visible` as things scroll in.
+ * Adds `is-visible` as things scroll into view.
  *
- * No run-once guard: StrictMode invokes effects twice, and a guard that skips the second
- * pass leaves the observer disconnected and the page stuck at opacity zero.
+ * No run-once guard: StrictMode invokes effects twice, and a guard that skips the second pass
+ * leaves the observer disconnected and the page stuck at opacity zero. Re-running on the
+ * query signals picks up content that arrives after the first pass.
  */
-function useReveal(signal?: unknown) {
+function useReveal(signals: unknown[]) {
   useEffect(() => {
-    const targets = Array.from(document.querySelectorAll(".reveal:not(.is-visible)"));
+    const targets = Array.from(document.querySelectorAll(".lp-reveal:not(.is-visible)"));
     if (!targets.length) return;
 
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -278,7 +394,7 @@ function useReveal(signal?: unknown) {
     );
     targets.forEach((node) => observer.observe(node));
     return () => observer.disconnect();
-  }, [signal]);
+  }, signals);
 }
 
 const STEPS = [
@@ -288,11 +404,11 @@ const STEPS = [
   },
   {
     title: "Verify the evidence, do not trust it",
-    body: "The quote is located in the page, and the value is checked against the page rather than against the quote. A fabricated figure cannot vouch for itself, and anything that fails becomes a row in the rejection ledger.",
+    body: "The quote is located in the page it was claimed from, and the value is checked against the page rather than against the quote. A fabricated figure cannot vouch for itself. Anything that fails becomes a row in the rejection ledger.",
   },
   {
     title: "Let rules answer first",
-    body: "Period, scale, currency, scope and basis are settled mechanically. That is free, reproducible, and explainable in a sentence a reader can check. The model is asked only about what the rules cannot settle.",
+    body: "Period, scale, currency, scope and basis are settled mechanically. That is free, reproducible, and explainable in a sentence a reader can check against the source. The model is asked only about what the rules cannot settle.",
   },
   {
     title: "Keep the schema as data",
@@ -314,15 +430,15 @@ const PROOFS = [
     verdict: "contradicts",
   },
   {
-    tone: "warn",
+    tone: "tag",
     title: "Explained by context",
-    body: "Figures that differ for a nameable reason: period, scale, scope, basis or vintage. The dimension responsible is named, so the reconciliation can be checked.",
+    body: "Figures that differ for a nameable reason: period, scale, scope, basis or vintage. The dimension responsible is named, so the reconciliation can be checked rather than believed.",
     verdict: "reconciled by context",
   },
   {
-    tone: "plain",
+    tone: "teal",
     title: "Where it failed",
-    body: "Counted, not described. Every refused candidate keeps the reason it was refused and the evidence that produced it.",
+    body: "Counted, not described. Every refused candidate keeps the reason it was refused and the evidence that produced it, and the rate is on the evaluation page.",
     verdict: "rejection ledger",
   },
 ];

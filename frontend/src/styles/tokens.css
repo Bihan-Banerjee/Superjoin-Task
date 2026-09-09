@@ -1,10 +1,19 @@
 /*
-  Design tokens.
+  Design tokens for the workbench.
 
-  The interface is a review workbench: dense tables, verbatim quotes, side-by-side
-  comparisons. It is optimised for reading a lot of text and numbers accurately, not for
-  looking impressive in a screenshot. Hence borders rather than shadows, one accent used
-  sparingly, and type small enough that a full evidence quote fits without scrolling.
+  The interface is a review surface: dense tables, verbatim quotes, side-by-side comparisons.
+  It is optimised for reading a lot of text and numbers accurately, not for looking impressive
+  in a screenshot. Hence borders rather than shadows, one accent used sparingly, and type
+  small enough that a full evidence quote fits without scrolling.
+
+  The landing page does not use these. It has its own scoped system in landing.css.
+
+  Dark values appear twice, and the two lists must stay identical. One covers the system
+  preference, the other covers an explicit choice from the toggle, and CSS has no way to share
+  a declaration list across a rule that is inside a media query and one that is not. They were
+  not identical before, so explicit dark inherited several light values and the highlighter
+  tint came out too weak to read against; scripts/check-tokens.mjs now fails the build if they
+  drift apart again.
 */
 
 :root {
@@ -29,8 +38,8 @@
   --accent-soft: #e8eef4;
   --accent-border: #b9cadb;
 
-  /* Relation semantics. Deliberately desaturated: these appear as small labels next to
-     dense text, and saturated chips make a table unreadable. */
+  /* Relation semantics. Deliberately desaturated: these appear as small labels next to dense
+     text, and saturated chips make a table unreadable. */
   --corroborate: #2f6b46;
   --corroborate-soft: #e6f0e9;
   --corroborate-border: #b4d0bf;
@@ -43,7 +52,7 @@
   --reconcile-soft: #f8f0e2;
   --reconcile-border: #dfcaa4;
 
-  /* Categorical, for telling documents apart in the optional graph view. Chosen to stay
+  /* Categorical, for telling documents apart in the graph view. Chosen to stay
      distinguishable beside each other at small sizes without any of them reading as the
      corroborate/contradict/reconcile colours above, which carry meaning. */
   --series-1: #3f6f97;
@@ -53,15 +62,14 @@
   --series-5: #8a4f66;
   --series-6: #5b6f3a;
 
-
-  /* Deeper accents, used where an element should carry weight rather than just sit there:
-     the landing page, primary actions, the active nav item. The workbench palette above is
-     unchanged: dense tables still need to be quiet. */
+  /* Deeper accents, for elements that should carry weight rather than just sit there:
+     primary actions and the active nav item. The palette above is unchanged, because dense
+     tables still need to be quiet. */
   --accent-strong: #1f3d57;
-  --stamp-ink: #ffffff;
-  --mk-strength: 40%;
   --accent-bright: #33689a;
   --accent-glow: rgba(61, 122, 176, 0.16);
+  --stamp-ink: #ffffff;
+  --mk-strength: 40%;
 
   --ink: #14181d;
   --ink-soft: #1d232b;
@@ -101,6 +109,7 @@
   --header-height: 44px;
 }
 
+/* dark:start */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
@@ -135,40 +144,26 @@
     --reconcile: #d4ab6a;
     --reconcile-soft: #2a2113;
     --reconcile-border: #4c3d22;
-  --series-1: #85aecf;
-  --series-2: #b096d0;
-  --series-3: #7fbaa6;
-  --series-4: #d2a06a;
-  --series-5: #c48ba0;
-  --series-6: #9db473;
-  --accent-strong: #9dc4e6;
-  --stamp-ink: #0f1216;
-  --mk-strength: 62%;
-  --accent-bright: #7fb2df;
-  --accent-glow: rgba(127, 178, 223, 0.18);
-  --ink: #0f1216;
-  --ink-soft: #161b21;
-  --ink-line: #252c34;
-  --on-ink: #eef1f4;
-  --on-ink-muted: #98a2ad;
-  --highlight: #d8b366;
-  --highlight-soft: #2a2113;
+
     --series-1: #85aecf;
     --series-2: #b096d0;
     --series-3: #7fbaa6;
     --series-4: #d2a06a;
     --series-5: #c48ba0;
     --series-6: #9db473;
+
     --accent-strong: #9dc4e6;
-    --stamp-ink: #0f1216;
-    --mk-strength: 62%;
     --accent-bright: #7fb2df;
     --accent-glow: rgba(127, 178, 223, 0.18);
+    --stamp-ink: #0f1216;
+    --mk-strength: 62%;
+
     --ink: #0f1216;
     --ink-soft: #161b21;
     --ink-line: #252c34;
     --on-ink: #eef1f4;
     --on-ink-muted: #98a2ad;
+
     --highlight: #d8b366;
     --highlight-soft: #2a2113;
 
@@ -176,7 +171,9 @@
     --neutral-chip-border: #34383c;
   }
 }
+/* dark:end */
 
+/* dark:start */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
@@ -211,6 +208,29 @@
   --reconcile-soft: #2a2113;
   --reconcile-border: #4c3d22;
 
+  --series-1: #85aecf;
+  --series-2: #b096d0;
+  --series-3: #7fbaa6;
+  --series-4: #d2a06a;
+  --series-5: #c48ba0;
+  --series-6: #9db473;
+
+  --accent-strong: #9dc4e6;
+  --accent-bright: #7fb2df;
+  --accent-glow: rgba(127, 178, 223, 0.18);
+  --stamp-ink: #0f1216;
+  --mk-strength: 62%;
+
+  --ink: #0f1216;
+  --ink-soft: #161b21;
+  --ink-line: #252c34;
+  --on-ink: #eef1f4;
+  --on-ink-muted: #98a2ad;
+
+  --highlight: #d8b366;
+  --highlight-soft: #2a2113;
+
   --neutral-chip: #24272a;
   --neutral-chip-border: #34383c;
 }
+/* dark:end */
