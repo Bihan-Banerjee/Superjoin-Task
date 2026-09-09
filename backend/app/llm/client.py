@@ -35,7 +35,7 @@ RATE_LIMIT_BACKOFF_SECONDS = 62.0
 # Consecutive quota rejections after which a model is treated as spent for this job. Free
 # tiers impose a daily cap as well as a per-minute one, and no amount of waiting clears the
 # daily one. Without this, every remaining call spends four minutes backing off before
-# failing anyway — an ingest that looks hung rather than one that reports a problem.
+# failing anyway: an ingest that looks hung rather than one that reports a problem.
 QUOTA_FAILURES_BEFORE_GIVING_UP = 3
 
 

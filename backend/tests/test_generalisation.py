@@ -2,7 +2,7 @@
 
 The brief is explicit that the system will be tested on unseen PDFs and that nothing may key
 off a filename, a schema or a document-specific rule. Every other test in this suite uses
-Indian corporate filings, which is exactly the corpus the thresholds were tuned on — so on
+Indian corporate filings, which is exactly the corpus the thresholds were tuned on: so on
 its own the suite could pass while the pipeline quietly only worked on that corpus.
 
 This one uses a water utility in a different country: a fiscal year running October to

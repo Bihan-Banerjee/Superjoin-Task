@@ -1,7 +1,7 @@
 """Documents with no text layer.
 
 The failure mode this covers is the quiet one. A scanned PDF parses without error, produces
-no words, classifies every page as empty and finishes "successfully" with nothing to show —
+no words, classifies every page as empty and finishes "successfully" with nothing to show,
 which looks exactly like a bug in extraction rather than a property of the file.
 
 The tests build a real scanned page: a rendered raster wrapped in a fresh PDF, with the text
@@ -25,7 +25,7 @@ TESSERACT = shutil.which("tesseract")
 
 @pytest.fixture(scope="module")
 def scanned_pdf(tmp_path_factory):
-    """A page rendered to an image and wrapped in a new PDF — a print-to-scan, in effect."""
+    """A page rendered to an image and wrapped in a new PDF: a print-to-scan, in effect."""
     directory = tmp_path_factory.mktemp("scanned")
     source = build_pdf(directory / "source.pdf", FILING_PAGES)
 

@@ -217,7 +217,7 @@ class TestPeriodInMeasureName:
 def test_a_count_does_not_inherit_the_documents_currency():
     """The filing declares rupees in million; pin codes are not rupees.
 
-    "18,793 pin codes covered" was coming out of the corpus as 1.879e13 INR billion — a
+    "18,793 pin codes covered" was coming out of the corpus as 1.879e13 INR billion: a
     figure no document contains, which then competed with real money in comparisons.
     """
     normalised = normalise(
@@ -247,3 +247,67 @@ def test_an_amount_with_no_unit_still_inherits_the_declaration():
     )
     assert normalised.currency == "INR"
     assert normalised.value_base == pytest.approx(81419.7 * 1e6)
+
+
+def test_a_date_is_not_scanned_for_a_quantity():
+    """ "May 10, 2022" is not the number 10.
+
+    157 of the corpus's 158 temporal facts carried a spurious figure pulled out of the date,
+    which then entered numeric comparison: two unrelated dates falling on the 14th look like
+    agreement to a reconciler working on the normalised value.
+    """
+    normalised = normalise(
+        statement="Suvir Suren Sujan has been a Director since March 7, 2019.",
+        kind="temporal",
+        predicate="period of directorship",
+        value_text="Since March 7, 2019",
+        value_number=None,
+        unit="",
+        currency="",
+        period="",
+        evidence_quote="Period of Directorship: Since March 7, 2019",
+    )
+    assert normalised.value_number is None
+    assert normalised.value_base is None
+    assert normalised.unit is None
+
+
+def test_a_quantity_is_still_read_as_one():
+    """The guard must not swallow genuine measurements."""
+    assert normalise().value_base == pytest.approx(8142 * 1e7)
+
+
+def test_a_per_share_amount_does_not_inherit_the_documents_scale():
+    """A face value of ₹1 each is one rupee, not one million rupees.
+
+    "All amounts in Indian Rupees in million" is a statement about the aggregates in a
+    statement, not about a per-share figure printed beside them. Getting this wrong is an
+    error of six orders of magnitude on exactly the numbers a reader checks first.
+    """
+    for predicate in ("face value", "average cost of acquisition per equity share"):
+        normalised = normalise(
+            statement=f"The {predicate} is Rs 1 each.",
+            predicate=predicate,
+            value_text="₹1",
+            value_number=1,
+            unit="INR",
+            currency="INR",
+            period="",
+            evidence_quote="face value of the Equity Shares is ₹1 each",
+        )
+        assert normalised.currency == "INR", predicate
+        assert normalised.value_base == 1, predicate
+
+
+def test_an_aggregate_still_inherits_the_scale():
+    """The guard must not reach figures the declaration really is about."""
+    normalised = normalise(
+        statement="Revenue from services for FY24 was 81,415",
+        predicate="revenue from services",
+        value_text="81,415",
+        value_number=81415,
+        unit="",
+        currency="INR",
+        evidence_quote="Revenue from services 81,415",
+    )
+    assert normalised.value_base == pytest.approx(81415 * 1e6)

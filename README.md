@@ -1,4 +1,4 @@
-# Fact Knowledge Layer
+﻿# Fact Knowledge Layer
 
 Reads PDFs, extracts facts that are grounded in verifiable evidence, and works out where
 those facts agree, disagree, or only appear to disagree because they were measured over
@@ -111,7 +111,7 @@ cd backend
 .venv/Scripts/python scripts/evaluate.py audit                  # re-verify every fact
 .venv/Scripts/python scripts/evaluate.py sample --size 40       # manual precision worksheet
 .venv/Scripts/python scripts/snapshot.py export                 # write the snapshot
-.venv/Scripts/python -m pytest                                  # 226 tests, ~22s
+.venv/Scripts/python -m pytest                                  # 244 tests, ~22s
 ```
 
 ## Video Demo
@@ -229,7 +229,7 @@ reproduce them.
 **1. Corroboration across documents, expressed differently.** The annual report states
 revenue from services for FY24 as `81,415` on a page declaring amounts in Indian Rupees in
 million. The earnings deck states the same measure as `8,142` in crore. Both normalise to
-₹81.42 billion, so the pair corroborates on the `unit_scale` dimension: decided by rule,
+â‚¹81.42 billion, so the pair corroborates on the `unit_scale` dimension: decided by rule,
 with no model call. This is the case the whole design exists for: the two figures share no
 digits, no unit and no wording, and are the same fact.
 
